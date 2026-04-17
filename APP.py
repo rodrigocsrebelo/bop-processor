@@ -15,7 +15,7 @@ APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
 
 st.set_page_config(page_title="BOP Usage List | BOP Full Large Files Upload", layout="wide")
 
-st.title("📊 BOP Dashboard XC-CP")
+st.title("📊 BOP HU-WHERE-USED | XC-CP Support")
 st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
 st.caption("⚡Usage List Optimized Version | PDM App to Manage PCNs/PTNs/PDNs")
 
