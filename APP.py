@@ -3,6 +3,7 @@ import pandas as pd
 import re
 from io import StringIO, BytesIO
 
+
 st.title("📊 BOP Processor")
 
 # =========================
@@ -66,66 +67,71 @@ if uploaded_file:
     st.write(f"📏 Total de linhas: {len(lines):,}")
 
     if st.button("🚀 Processar"):
-    rows_complete = []
-    rows_group = []
+        rows_complete = []
+        rows_group = []
 
-    progress = st.progress(0)
+        progress = st.progress(0)
 
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line or line.startswith("Level"):
-            continue
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line or line.startswith("Level"):
+                continue
 
-        cols = parse_line(line, len(ALL_COLUMNS))
-        row = dict(zip(ALL_COLUMNS, cols))
+            cols = parse_line(line, len(ALL_COLUMNS))
+            row = dict(zip(ALL_COLUMNS, cols))
 
-        group_name = identify_group(row["Final Usage"])
+            group_name = identify_group(row["Final Usage"])
 
-        if group_name:
-            rows_group.append({
-                "Group": group_name,
-                "Part Number": row["Final Usage"],
-                "Level": row["Level"],
-                "Description DC": row["Description DC"],
-                "Item Quantity DU": row["Item Quantity DU"],
-                "Direct Usage": row["Direct Usage"],
-                "Final Usage": row["Final Usage"],
-                "Description FU": row["Description FU"],
-                "Plant FU (BOM)": row["Plant FU (BOM)"],
-                "FU Charact. 1 Value": row["FU Charact. 1 Value"]
-            })
+            if group_name:
+                rows_group.append({
+                    "Group": group_name,
+                    "Part Number": row["Final Usage"],
+                    "Level": row["Level"],
+                    "Description DC": row["Description DC"],
+                    "Item Quantity DU": row["Item Quantity DU"],
+                    "Direct Usage": row["Direct Usage"],
+                    "Final Usage": row["Final Usage"],
+                    "Description FU": row["Description FU"],
+                    "Plant FU (BOM)": row["Plant FU (BOM)"],
+                    "FU Charact. 1 Value": row["FU Charact. 1 Value"]
+                })
 
-        rows_complete.append(row)
+            rows_complete.append(row)
 
-        if i % 1000 == 0:
-            progress.progress(i / len(lines))
+            # Atualiza barra
+            if i % 1000 == 0:
+                progress.progress(i / len(lines))
 
-    df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
-    df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
+        df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
+        df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
 
-    st.success("✅ Processamento concluído!")
+        st.success("✅ Processamento concluído!")
 
-    # CSV
-    csv_buffer = StringIO()
-    df_complete.to_csv(csv_buffer, index=False)
+        # =========================
+        # DOWNLOAD CSV
+        # =========================
+        csv_buffer = StringIO()
+        df_complete.to_csv(csv_buffer, index=False)
 
-    st.download_button(
-        "⬇️ Download CSV Completo",
-        csv_buffer.getvalue(),
-        "BOP_Output.csv",
-        "text/csv"
-    )
+        st.download_button(
+            label="⬇️ Download CSV Completo",
+            data=csv_buffer.getvalue(),
+            file_name="BOP_Output.csv",
+            mime="text/csv"
+        )
 
-    # EXCEL
-    excel_buffer = BytesIO()
+        # =========================
+        # DOWNLOAD EXCEL
+        # =========================
+        excel_buffer = BytesIO()
 
-    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-        df_complete.to_excel(writer, sheet_name="Complete", index=False)
-        df_group.to_excel(writer, sheet_name="ByGroups", index=False)
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            df_complete.to_excel(writer, sheet_name="Complete", index=False)
+            df_group.to_excel(writer, sheet_name="ByGroups", index=False)
 
-    st.download_button(
-        "⬇️ Download Excel",
-        excel_buffer.getvalue(),
-        "BOP_Report.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.download_button(
+            label="⬇️ Download Excel",
+            data=excel_buffer.getvalue(),
+            file_name="BOP_Report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
