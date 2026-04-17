@@ -15,9 +15,9 @@ APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
 
 st.set_page_config(page_title="BOP Dashboard PRO", layout="wide")
 
-st.title("📊 BOP Dashboard PRO")
+st.title("📊 BOP Dashboard XC-CP")
 st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
-st.caption("⚡Usage List Optimized version | PDM app to manage PCNs/PTNs/PDNs")
+st.caption("⚡Usage List Optimized Version | PDM App to Manage PCNs/PTNs/PDNs")
 
 # =========================
 # DATA STRUCTURE
