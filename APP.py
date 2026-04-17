@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import re
 from io import StringIO, BytesIO
+import gc
 
-st.set_page_config(page_title="BOP Processor", layout="wide")
-
-st.title("📊 BOP Processor PRO")
+st.title("📊 BOP Processor - Stable Version")
 
 # =========================
 # CONFIG
@@ -25,53 +24,7 @@ GROUP_COLUMNS = [
 ]
 
 # =========================
-# CACHE (IMPORTANT SPEED BOOST)
-# =========================
-@st.cache_data
-def process_files(file_data):
-    rows_complete = []
-    rows_group = []
-
-    total_lines = sum(len(lines) for lines in file_data)
-    processed = 0
-
-    for lines in file_data:
-        for line in lines:
-
-            if not line or line.startswith("Level"):
-                continue
-
-            cols = parse_line(line, len(ALL_COLUMNS))
-            row = [cols[j] if j < len(cols) else "" for j in range(len(ALL_COLUMNS))]
-            rows_complete.append(row)
-
-            final_usage = row[12]
-            group_name = identify_group(final_usage)
-
-            if group_name:
-                rows_group.append([
-                    group_name,
-                    final_usage,
-                    row[0],
-                    row[2],
-                    row[3],
-                    row[4],
-                    row[12],
-                    row[13],
-                    row[18],
-                    row[19],
-                ])
-
-            processed += 1
-
-    df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
-    df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
-
-    return df_complete, df_group
-
-
-# =========================
-# FUNCTIONS (FAST)
+# FUNCTIONS
 # =========================
 def normalize_number(value: str) -> str:
     return re.sub(r"\D", "", value)
@@ -102,74 +55,85 @@ def parse_line(line, num_columns):
 # =========================
 # UI
 # =========================
-uploaded_files = st.file_uploader(
+files = st.file_uploader(
     "📂 Upload TXT files",
     type=["txt"],
     accept_multiple_files=True
 )
 
-if uploaded_files:
-
-    st.success(f"{len(uploaded_files)} file(s) loaded")
+if files:
 
     if st.button("🚀 Process"):
-
-        # =========================
-        # LOAD FILES
-        # =========================
-        file_data = []
-
-        for f in uploaded_files:
-            text = f.read().decode("utf-8", errors="ignore")
-            file_data.append(text.splitlines())
 
         progress = st.progress(0)
         status = st.empty()
 
-        status.text("⚡ Processing files...")
+        # CSV streaming (no RAM explosion)
+        csv_buffer = StringIO()
+        csv_buffer.write(",".join(ALL_COLUMNS) + "\n")
 
-        df_complete, df_group = process_files(file_data)
+        group_rows = []  # small only
 
-        progress.progress(1.0)
-        status.text("✅ Done!")
+        total_lines = sum(len(f.read().decode("utf-8", errors="ignore").splitlines()) for f in files)
 
-        st.success("Processing complete!")
+        # reset file pointers
+        files = [f for f in files]
 
-        # =========================
-        # FILTER UI
-        # =========================
-        st.subheader("🔍 Filters")
-
-        group_filter = st.multiselect(
-            "Filter by Group",
-            options=df_group["Group"].unique()
-        )
-
-        search_text = st.text_input("Search (Description / Part Number)")
+        processed = 0
 
         # =========================
-        # APPLY FILTERS
+        # PROCESS STREAMING
         # =========================
-        df_view = df_group.copy()
+        for f in files:
 
-        if group_filter:
-            df_view = df_view[df_view["Group"].isin(group_filter)]
+            text = f.read().decode("utf-8", errors="ignore")
+            lines = text.splitlines()
 
-        if search_text:
-            mask = df_view.astype(str).apply(
-                lambda x: x.str.contains(search_text, case=False, na=False)
-            ).any(axis=1)
-            df_view = df_view[mask]
+            for line in lines:
 
-        st.subheader("📊 Results")
-        st.dataframe(df_view, use_container_width=True)
+                if not line or line.startswith("Level"):
+                    continue
+
+                cols = parse_line(line, len(ALL_COLUMNS))
+                cols = cols + [""] * (len(ALL_COLUMNS) - len(cols))
+
+                # WRITE DIRECTLY TO CSV (NO RAM LIST)
+                csv_buffer.write(",".join(cols) + "\n")
+
+                # GROUP (small memory only)
+                final_usage = cols[12]
+                group = identify_group(final_usage)
+
+                if group:
+                    group_rows.append([
+                        group,
+                        final_usage,
+                        cols[0],
+                        cols[2],
+                        cols[3],
+                        cols[4],
+                        cols[12],
+                        cols[13],
+                        cols[18],
+                        cols[19],
+                    ])
+
+                processed += 1
+
+                if processed % 2000 == 0:
+                    progress.progress(min(processed / total_lines, 1.0))
+                    status.text(f"Processing... {processed}/{total_lines}")
+
+        status.text("Generating outputs...")
+
+        # =========================
+        # GROUP DF (small)
+        # =========================
+        df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
 
         # =========================
         # DOWNLOAD CSV
         # =========================
-        csv_buffer = StringIO()
-        df_complete.to_csv(csv_buffer, index=False)
-
         st.download_button(
             "⬇️ Download CSV",
             csv_buffer.getvalue(),
@@ -178,12 +142,13 @@ if uploaded_files:
         )
 
         # =========================
-        # DOWNLOAD EXCEL
+        # EXCEL (SAFE)
         # =========================
         excel_buffer = BytesIO()
 
+        status.text("Creating Excel...")
+
         with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-            df_complete.to_excel(writer, sheet_name="Complete", index=False)
             df_group.to_excel(writer, sheet_name="ByGroups", index=False)
 
         excel_buffer.seek(0)
@@ -194,3 +159,8 @@ if uploaded_files:
             "BOP_Report.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        progress.progress(1.0)
+        status.text("Done!")
+
+        gc.collect()
