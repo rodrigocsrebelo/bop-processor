@@ -9,17 +9,17 @@ import gc
 # =========================
 # APP CONFIG
 # =========================
-APP_VERSION = "v3.0.0"
+APP_VERSION = "v3.1.0"
 APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
 
 st.set_page_config(page_title="BOP Dashboard PRO", layout="wide")
 
 st.title("📊 BOP Dashboard PRO")
 st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
-st.caption("Enterprise BI Engine | 1M+ lines safe processing")
+st.caption("Enterprise BI Tool | 1M+ lines safe")
 
 # =========================
-# DATA CONFIG
+# CONFIG
 # =========================
 ALL_COLUMNS = [
     "Level","Search Object (SO)","Description DC","Item Quantity DU","Direct Usage","Description DU",
@@ -67,9 +67,8 @@ def parse_line(line, ncols):
 
     return cols[:ncols]
 
-
 # =========================
-# SIDEBAR CONTROLS
+# SIDEBAR
 # =========================
 st.sidebar.header("⚙ Controls")
 
@@ -83,9 +82,10 @@ run = st.sidebar.button("🚀 Process")
 
 reset = st.sidebar.button("🔄 Reset Filters")
 
-# reset filters
+# RESET FILTERS ONLY
 if reset:
-    st.session_state.clear()
+    st.session_state["group_filter"] = []
+    st.session_state["search"] = ""
     st.rerun()
 
 # =========================
@@ -97,9 +97,11 @@ if "df_group" not in st.session_state:
 if "csv_path" not in st.session_state:
     st.session_state.csv_path = None
 
+if "df_usage" not in st.session_state:
+    st.session_state.df_usage = None
 
 # =========================
-# PROCESS DATA
+# PROCESSING
 # =========================
 if files and run:
 
@@ -107,7 +109,6 @@ if files and run:
     status = st.empty()
 
     tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
-
     writer = csv.writer(tmp)
     writer.writerow(ALL_COLUMNS)
 
@@ -156,9 +157,9 @@ if files and run:
 
     st.session_state.df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
     st.session_state.csv_path = tmp.name
+    st.session_state.df_usage = None  # reset usage cache
 
     status.text("Processing completed")
-
 
 # =========================
 # DASHBOARD
@@ -167,9 +168,16 @@ if st.session_state.df_group is not None:
 
     df_group = st.session_state.df_group.copy()
 
-    # =========================
-    # FILTER OPTIONS (FIXED)
-    # =========================
+    # LOAD USAGE LIST ONCE
+    if st.session_state.df_usage is None:
+        st.session_state.df_usage = pd.read_csv(
+            st.session_state.csv_path,
+            low_memory=False
+        )
+
+    df_usage = st.session_state.df_usage
+
+    # FILTER OPTIONS
     group_options = sorted(df_group["Group"].dropna().unique())
 
     group_filter = st.sidebar.multiselect(
@@ -186,9 +194,7 @@ if st.session_state.df_group is not None:
     st.session_state.group_filter = group_filter
     st.session_state.search = search
 
-    # =========================
     # APPLY FILTERS
-    # =========================
     df_view = df_group.copy()
 
     if group_filter:
@@ -206,7 +212,6 @@ if st.session_state.df_group is not None:
     st.subheader("📊 Dashboard Overview")
 
     c1, c2, c3, c4 = st.columns(4)
-
     c1.metric("Total Rows", len(df_group))
     c2.metric("Filtered", len(df_view))
     c3.metric("Groups", df_group["Group"].nunique())
@@ -218,21 +223,29 @@ if st.session_state.df_group is not None:
     st.divider()
     st.subheader("📈 Analytics")
 
-    c1, c2 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-    with c1:
+    with col1:
         st.bar_chart(df_group["Group"].value_counts())
 
-    with c2:
+    with col2:
         st.bar_chart(df_view["Group"].value_counts())
 
     # =========================
-    # FULL PREVIEW
+    # GROUPS TABLE
     # =========================
     st.divider()
-    st.subheader("📦 FULL DATA (Usage List)")
+    st.subheader("📊 Groups Data")
 
     st.dataframe(df_group, use_container_width=True, height=300)
+
+    # =========================
+    # USAGE LIST TABLE
+    # =========================
+    st.divider()
+    st.subheader("📦 Usage List (FULL DATA)")
+
+    st.dataframe(df_usage, use_container_width=True, height=300)
 
     # =========================
     # FILTERED TABLE
@@ -240,57 +253,52 @@ if st.session_state.df_group is not None:
     st.divider()
     st.subheader("📋 Filtered Data")
 
-    st.dataframe(df_view, use_container_width=True, height=500)
+    st.dataframe(df_view, use_container_width=True, height=400)
 
     # =========================
-    # DOWNLOAD CSV FULL
+    # DOWNLOADS
     # =========================
     st.divider()
 
+    # CSV FULL
     with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
         csv_data = f.read()
 
     st.download_button(
-        "⬇️ Download FULL CSV (1M+)",
+        "⬇️ Download FULL CSV",
         csv_data,
         "BOP_Output.csv",
         "text/csv"
     )
 
-    # =========================
-    # EXCEL FILTERED
-    # =========================
+    # EXCEL GROUPS
     excel1 = BytesIO()
-
     with pd.ExcelWriter(excel1, engine="openpyxl") as writer:
-        df_view.to_excel(writer, sheet_name="Filtered", index=False)
+        df_view.to_excel(writer, sheet_name="Filtered Groups", index=False)
 
     excel1.seek(0)
 
     st.download_button(
-        "⬇️ Download Excel (Filtered)",
+        "⬇️ Download Excel (Groups)",
         excel1.getvalue(),
-        "BOP_Filtered.xlsx",
+        "BOP_Groups.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # =========================
-    # EXCEL FULL
-    # =========================
+    # EXCEL USAGE FULL
     excel2 = BytesIO()
-
     with pd.ExcelWriter(excel2, engine="openpyxl") as writer:
-        df_group.to_excel(writer, sheet_name="Usage List", index=False)
+        df_usage.to_excel(writer, sheet_name="Usage List", index=False)
 
     excel2.seek(0)
 
     st.download_button(
-        "⬇️ Download Excel (FULL Usage List)",
+        "⬇️ Download Excel (Usage List FULL)",
         excel2.getvalue(),
         "BOP_Usage_List.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    st.success("Ready ✔")
+    st.success("Dashboard ready ✔")
 
     gc.collect()
