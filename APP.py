@@ -51,7 +51,7 @@ def parse_line(line, num_columns):
     return cols[:num_columns]
 
 # =========================
-# UI - MULTIPLE FILE UPLOAD
+# UI
 # =========================
 uploaded_files = st.file_uploader(
     "📂 Upload TXT files",
@@ -71,9 +71,11 @@ if uploaded_files:
         progress = st.progress(0)
         status = st.empty()
 
-        # count total lines first (for correct progress)
-        total_lines = 0
+        # =========================
+        # LOAD ALL LINES FIRST
+        # =========================
         file_lines = []
+        total_lines = 0
 
         for f in uploaded_files:
             text = f.read().decode("utf-8", errors="ignore")
@@ -89,9 +91,8 @@ if uploaded_files:
         # =========================
         # PROCESS FILES
         # =========================
-        for file_idx, lines in enumerate(file_lines):
-
-            for i, line in enumerate(lines):
+        for lines in file_lines:
+            for line in lines:
 
                 if not line or line.startswith("Level"):
                     continue
@@ -123,7 +124,7 @@ if uploaded_files:
                 if processed % 500 == 0:
                     percent = processed / total_lines
                     progress.progress(min(percent, 1.0))
-                    status.text(f"🔄 Processing... {processed}/{total_lines}")
+                    status.text(f"🔄 Processing data... {processed}/{total_lines}")
 
         # =========================
         # DATAFRAMES
@@ -131,10 +132,8 @@ if uploaded_files:
         df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
         df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
 
-        progress.progress(1.0)
-        status.text("✅ Processing complete!")
-
-        st.success("Done!")
+        progress.progress(0.98)
+        status.text("📊 Generating Excel file...")
 
         # =========================
         # CSV
@@ -150,13 +149,23 @@ if uploaded_files:
         )
 
         # =========================
-        # EXCEL
+        # EXCEL (OPÇÃO 1 - STATUS)
         # =========================
         excel_buffer = BytesIO()
 
+        status.text("📊 Writing Excel - Complete sheet...")
+
         with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
             df_complete.to_excel(writer, sheet_name="Complete", index=False)
+
+            status.text("📊 Writing Excel - Groups sheet...")
+
             df_group.to_excel(writer, sheet_name="ByGroups", index=False)
+
+        status.text("📊 Finalizing file...")
+        progress.progress(1.0)
+
+        st.success("✅ Processing complete!")
 
         st.download_button(
             "⬇️ Download Excel",
