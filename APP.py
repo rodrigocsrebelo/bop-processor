@@ -5,21 +5,22 @@ import csv
 from io import BytesIO
 import tempfile
 import gc
+from openpyxl import Workbook
 
 # =========================
-# APP CONFIG
+# CONFIG
 # =========================
-APP_VERSION = "v3.1.0"
+APP_VERSION = "v4.0.0"
 APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
 
 st.set_page_config(page_title="BOP Dashboard PRO", layout="wide")
 
 st.title("📊 BOP Dashboard PRO")
 st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
-st.caption("Enterprise BI Tool | 1M+ lines safe")
+st.caption("⚡Usage List Optimized version | PDM app to manage PCNs/PTNs/PDNs")
 
 # =========================
-# CONFIG
+# DATA STRUCTURE
 # =========================
 ALL_COLUMNS = [
     "Level","Search Object (SO)","Description DC","Item Quantity DU","Direct Usage","Description DU",
@@ -56,11 +57,9 @@ def identify_group(fu):
     return "Other"
 
 def parse_line(line, ncols):
-    line = line.strip()
-    cols = line.split("\t")
-
+    cols = line.strip().split("\t")
     if len(cols) == 1:
-        cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line)
+        cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line.strip())
 
     if len(cols) < ncols:
         cols += [""] * (ncols - len(cols))
@@ -79,10 +78,9 @@ files = st.sidebar.file_uploader(
 )
 
 run = st.sidebar.button("🚀 Process")
-
 reset = st.sidebar.button("🔄 Reset Filters")
 
-# RESET FILTERS ONLY
+# RESET ONLY FILTERS
 if reset:
     st.session_state["group_filter"] = []
     st.session_state["search"] = ""
@@ -97,9 +95,6 @@ if "df_group" not in st.session_state:
 if "csv_path" not in st.session_state:
     st.session_state.csv_path = None
 
-if "df_usage" not in st.session_state:
-    st.session_state.df_usage = None
-
 # =========================
 # PROCESSING
 # =========================
@@ -107,6 +102,8 @@ if files and run:
 
     progress = st.progress(0)
     status = st.empty()
+
+    status.info("📥 Processing files...")
 
     tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
     writer = csv.writer(tmp)
@@ -133,19 +130,18 @@ if files and run:
             fu = cols[12]
             group = identify_group(fu)
 
-            if group:
-                group_rows.append([
-                    group,
-                    fu,
-                    cols[0],
-                    cols[2],
-                    cols[3],
-                    cols[4],
-                    cols[12],
-                    cols[13],
-                    cols[18],
-                    cols[19],
-                ])
+            group_rows.append([
+                group,
+                fu,
+                cols[0],
+                cols[2],
+                cols[3],
+                cols[4],
+                cols[12],
+                cols[13],
+                cols[18],
+                cols[19],
+            ])
 
             processed += 1
 
@@ -157,32 +153,20 @@ if files and run:
 
     st.session_state.df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
     st.session_state.csv_path = tmp.name
-    st.session_state.df_usage = None  # reset usage cache
 
-    status.text("Processing completed")
+    status.success("✅ Processing completed")
 
 # =========================
 # DASHBOARD
 # =========================
 if st.session_state.df_group is not None:
 
-    df_group = st.session_state.df_group.copy()
+    df_group = st.session_state.df_group
 
-    # LOAD USAGE LIST ONCE
-    if st.session_state.df_usage is None:
-        st.session_state.df_usage = pd.read_csv(
-            st.session_state.csv_path,
-            low_memory=False
-        )
-
-    df_usage = st.session_state.df_usage
-
-    # FILTER OPTIONS
-    group_options = sorted(df_group["Group"].dropna().unique())
-
+    # FILTERS
     group_filter = st.sidebar.multiselect(
         "Filter Group",
-        options=group_options,
+        sorted(df_group["Group"].unique()),
         default=st.session_state.get("group_filter", [])
     )
 
@@ -209,58 +193,25 @@ if st.session_state.df_group is not None:
     # KPIs
     # =========================
     st.divider()
-    st.subheader("📊 Dashboard Overview")
+    c1, c2, c3 = st.columns(3)
 
-    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Rows", len(df_group))
     c2.metric("Filtered", len(df_view))
     c3.metric("Groups", df_group["Group"].nunique())
-    c4.metric("CP1", (df_group["Group"] == "CP1").sum())
 
     # =========================
-    # CHARTS
-    # =========================
-    st.divider()
-    st.subheader("📈 Analytics")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.bar_chart(df_group["Group"].value_counts())
-
-    with col2:
-        st.bar_chart(df_view["Group"].value_counts())
-
-    # =========================
-    # GROUPS TABLE
+    # TABLE
     # =========================
     st.divider()
     st.subheader("📊 Groups Data")
 
-    st.dataframe(df_group, use_container_width=True, height=300)
+    st.dataframe(df_view, width='stretch', height=500)
 
     # =========================
-    # USAGE LIST TABLE
-    # =========================
-    st.divider()
-    st.subheader("📦 Usage List (FULL DATA)")
-
-    st.dataframe(df_usage, use_container_width=True, height=300)
-
-    # =========================
-    # FILTERED TABLE
-    # =========================
-    st.divider()
-    st.subheader("📋 Filtered Data")
-
-    st.dataframe(df_view, use_container_width=True, height=400)
-
-    # =========================
-    # DOWNLOADS
+    # DOWNLOAD CSV
     # =========================
     st.divider()
 
-    # CSV FULL
     with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
         csv_data = f.read()
 
@@ -271,34 +222,66 @@ if st.session_state.df_group is not None:
         "text/csv"
     )
 
+    # =========================
     # EXCEL GROUPS
-    excel1 = BytesIO()
-    with pd.ExcelWriter(excel1, engine="openpyxl") as writer:
-        df_view.to_excel(writer, sheet_name="Filtered Groups", index=False)
+    # =========================
+    excel_groups = BytesIO()
 
-    excel1.seek(0)
+    with st.spinner("Generating Groups Excel..."):
+        with pd.ExcelWriter(excel_groups, engine="openpyxl") as writer:
+            df_view.to_excel(writer, sheet_name="Filtered Groups", index=False)
+
+    excel_groups.seek(0)
 
     st.download_button(
         "⬇️ Download Excel (Groups)",
-        excel1.getvalue(),
+        excel_groups.getvalue(),
         "BOP_Groups.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # EXCEL USAGE FULL
-    excel2 = BytesIO()
-    with pd.ExcelWriter(excel2, engine="openpyxl") as writer:
-        df_usage.to_excel(writer, sheet_name="Usage List", index=False)
+    # =========================
+    # EXCEL FULL (STREAMING)
+    # =========================
+    st.divider()
 
-    excel2.seek(0)
+    if st.button("📦 Generate FULL Excel (Usage List)"):
 
-    st.download_button(
-        "⬇️ Download Excel (Usage List FULL)",
-        excel2.getvalue(),
-        "BOP_Usage_List.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        status = st.empty()
+        status.info("Generating large Excel file...")
 
-    st.success("Dashboard ready ✔")
+        excel_buffer = BytesIO()
+
+        wb = Workbook(write_only=True)
+        ws = wb.create_sheet("Usage List")
+
+        ws.append(ALL_COLUMNS)
+
+        with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader)
+
+            count = 0
+            progress_excel = st.progress(0)
+
+            for row in reader:
+                ws.append(row)
+                count += 1
+
+                if count % 10000 == 0:
+                    progress_excel.progress(min(count / 1_000_000, 1.0))
+                    status.text(f"Writing Excel: {count:,} rows")
+
+        wb.save(excel_buffer)
+        excel_buffer.seek(0)
+
+        st.download_button(
+            "⬇️ Download FULL Excel",
+            excel_buffer.getvalue(),
+            "BOP_Usage_List.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        status.success("Excel ready ✔")
 
     gc.collect()
