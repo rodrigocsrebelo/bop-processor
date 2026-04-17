@@ -3,15 +3,8 @@ import pandas as pd
 import re
 from io import BytesIO
 import tempfile
-import gc
 
-# =========================
-# PAGE CONFIG (UI BETTER)
-# =========================
-st.set_page_config(page_title="BOP Processor PRO", layout="wide")
-
-st.title("📊 BOP Processor - Enterprise Edition")
-st.caption("Handles 1M+ lines safely | No crashes | Fast streaming engine")
+st.title("📊 BOP Processor - Bosch Export")
 
 # =========================
 # CONFIG
@@ -25,78 +18,39 @@ ALL_COLUMNS = [
     "Valid to date DU","Status Text","WU Status Code"
 ]
 
-GROUP_COLUMNS = [
-    "Group","Part Number","Level","Description DC","Item Quantity DU","Direct Usage",
-    "Final Usage","Description FU","Plant FU (BOM)","FU Charact. 1 Value"
-]
-
 # =========================
-# FAST FUNCTIONS
+# FUNCTIONS
 # =========================
-def normalize_number(v):
-    return re.sub(r"\D", "", v or "")
-
-def identify_group(fu):
-    fu = normalize_number(fu)
-    if fu.startswith(("7612","7609","764","750","751","752")):
-        return "CP1"
-    if fu.startswith("0263"):
-        return "CP2"
-    if fu.startswith(("7620","7607")):
-        return "CP1-PRO"
-    if fu.startswith("8613600"):
-        return "Bombardier"
-    if fu.startswith("1270020"):
-        return "E-bike"
-    return ""
-
 def parse_line(line, ncols):
-    line = line.strip()
-    cols = line.split("\t")
-
+    cols = line.strip().split("\t")
     if len(cols) == 1:
-        cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line)
-
+        cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line.strip())
     if len(cols) < ncols:
         cols += [""] * (ncols - len(cols))
-
     return cols[:ncols]
 
 
 # =========================
 # UI
 # =========================
-files = st.file_uploader(
-    "📂 Upload TXT files (1M+ supported)",
-    type=["txt"],
-    accept_multiple_files=True
-)
+files = st.file_uploader("📂 Upload TXT files", type=["txt"], accept_multiple_files=True)
+
+logo_path = "bosch_logo.png"  # coloca este ficheiro no repo
 
 if files:
-
-    st.success(f"{len(files)} file(s) loaded")
 
     if st.button("🚀 PROCESS"):
 
         progress = st.progress(0)
         status = st.empty()
 
-        # =========================
-        # TEMP CSV FILE (NO RAM)
-        # =========================
-        tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8")
-        tmp.write(",".join(ALL_COLUMNS) + "\n")
-
-        group_rows = []
+        tmp_csv = tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8")
+        tmp_csv.write(",".join(ALL_COLUMNS) + "\n")
 
         processed = 0
-        total_estimate = sum(len(f.getvalue().decode("utf-8", errors="ignore").splitlines()) for f in files)
+        total = sum(len(f.getvalue().decode("utf-8", errors="ignore").splitlines()) for f in files)
 
-        # =========================
-        # STREAM PROCESS
-        # =========================
         for f in files:
-
             text = f.getvalue().decode("utf-8", errors="ignore")
 
             for line in text.splitlines():
@@ -107,117 +61,53 @@ if files:
                 cols = parse_line(line, len(ALL_COLUMNS))
                 cols = (cols + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
 
-                tmp.write(",".join(cols) + "\n")
-
-                # GROUP DATA (SMALL ONLY)
-                fu = cols[12]
-                group = identify_group(fu)
-
-                if group:
-                    group_rows.append([
-                        group,
-                        fu,
-                        cols[0],
-                        cols[2],
-                        cols[3],
-                        cols[4],
-                        cols[12],
-                        cols[13],
-                        cols[18],
-                        cols[19],
-                    ])
+                tmp_csv.write(",".join(cols) + "\n")
 
                 processed += 1
 
                 if processed % 5000 == 0:
-                    progress.progress(min(processed / total_estimate, 1.0))
-                    status.text(f"Processing... {processed:,} lines")
+                    progress.progress(min(processed / total, 1.0))
+                    status.text(f"Processing... {processed:,}")
 
-        tmp.close()
-
-        status.text("Loading results...")
-
-        # =========================
-        # GROUP DATAFRAME (FOR UI FILTERS)
-        # =========================
-        df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
-
-        # =========================
-        # 🔥 UI FILTERS (FAST)
-        # =========================
-        st.divider()
-        st.subheader("🔍 Filters")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            group_filter = st.multiselect(
-                "Group",
-                options=sorted(df_group["Group"].dropna().unique()),
-                default=[]
-            )
-
-        with col2:
-            search = st.text_input("Search text (Description / Part Number)")
-
-        # APPLY FILTERS
-        df_view = df_group.copy()
-
-        if group_filter:
-            df_view = df_view[df_view["Group"].isin(group_filter)]
-
-        if search:
-            df_view = df_view[df_view.astype(str).apply(
-                lambda x: x.str.contains(search, case=False, na=False)
-            ).any(axis=1)]
-
-        # =========================
-        # UI TABLE (PRETTY)
-        # =========================
-        st.divider()
-        st.subheader("📊 Results")
-
-        st.dataframe(
-            df_view,
-            use_container_width=True,
-            height=450
-        )
-
-        # =========================
-        # DOWNLOAD CSV (FULL)
-        # =========================
-        st.divider()
-
-        with open(tmp.name, "r", encoding="utf-8") as f:
-            csv_data = f.read()
-
-        st.download_button(
-            "⬇️ Download FULL CSV (1M+)",
-            csv_data,
-            "BOP_Output.csv",
-            "text/csv"
-        )
-
-        # =========================
-        # DOWNLOAD EXCEL (GROUP ONLY)
-        # =========================
-        excel_buffer = BytesIO()
+        tmp_csv.close()
 
         status.text("Generating Excel...")
 
-        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-            df_view.to_excel(writer, sheet_name="FilteredGroups", index=False)
+        # =========================
+        # READ CSV BACK (FAST & SAFE)
+        # =========================
+        df = pd.read_csv(tmp_csv.name)
+
+        # =========================
+        # EXCEL WITH LOGO (xlsxwriter)
+        # =========================
+        excel_buffer = BytesIO()
+
+        with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+
+            df.to_excel(writer, sheet_name="BOP_Data", index=False)
+
+            workbook = writer.book
+            worksheet = writer.sheets["BOP_Data"]
+
+            # =========================
+            # ADD BOSCH LOGO
+            # =========================
+            try:
+                worksheet.insert_image("A1", logo_path, {
+                    "x_scale": 0.3,
+                    "y_scale": 0.3
+                })
+            except Exception as e:
+                st.warning(f"Logo not found: {e}")
 
         excel_buffer.seek(0)
 
-        st.download_button(
-            "⬇️ Download Excel (Filtered)",
-            excel_buffer.getvalue(),
-            "BOP_Report.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        progress.progress(1.0)
         status.text("Done!")
 
-        gc.collect()
+        st.download_button(
+            "⬇️ Download Excel (with Bosch logo)",
+            excel_buffer,
+            "BOP_Bosch_Report.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
