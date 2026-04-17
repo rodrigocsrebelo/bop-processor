@@ -72,7 +72,7 @@ if uploaded_files:
         status = st.empty()
 
         # =========================
-        # LOAD ALL LINES FIRST
+        # LOAD FILES
         # =========================
         file_lines = []
         total_lines = 0
@@ -89,7 +89,7 @@ if uploaded_files:
         identify_group_local = identify_group
 
         # =========================
-        # PROCESS FILES
+        # PROCESS
         # =========================
         for lines in file_lines:
             for line in lines:
@@ -124,7 +124,7 @@ if uploaded_files:
                 if processed % 500 == 0:
                     percent = processed / total_lines
                     progress.progress(min(percent, 1.0))
-                    status.text(f"🔄 Processing data... {processed}/{total_lines}")
+                    status.text(f"🔄 Processing... {processed}/{total_lines}")
 
         # =========================
         # DATAFRAMES
@@ -149,7 +149,7 @@ if uploaded_files:
         )
 
         # =========================
-        # EXCEL (OPÇÃO 1 - STATUS)
+        # EXCEL (FIXED + SAFE)
         # =========================
         excel_buffer = BytesIO()
 
@@ -159,8 +159,9 @@ if uploaded_files:
             df_complete.to_excel(writer, sheet_name="Complete", index=False)
 
             status.text("📊 Writing Excel - Groups sheet...")
-
             df_group.to_excel(writer, sheet_name="ByGroups", index=False)
+
+        excel_buffer.seek(0)
 
         status.text("📊 Finalizing file...")
         progress.progress(1.0)
