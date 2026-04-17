@@ -7,12 +7,16 @@ import tempfile
 import gc
 
 # =========================
-# PAGE CONFIG
+# APP METADATA
 # =========================
+APP_VERSION = "v1.0.0"
+APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
+
 st.set_page_config(page_title="BOP Processor PRO", layout="wide")
 
 st.title("📊 BOP Processor - Enterprise Edition")
-st.caption("1M+ lines safe | Streaming engine | No crashes")
+st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
+st.caption("Handles 1M+ lines safely | Streaming engine | No crashes")
 
 # =========================
 # CONFIG
@@ -65,7 +69,17 @@ def parse_line(line, ncols):
 
 
 # =========================
-# UI
+# SESSION STATE INIT
+# =========================
+if "df_group" not in st.session_state:
+    st.session_state.df_group = None
+
+if "csv_path" not in st.session_state:
+    st.session_state.csv_path = None
+
+
+# =========================
+# FILE UPLOAD
 # =========================
 files = st.file_uploader(
     "📂 Upload TXT files (1M+ supported)",
@@ -83,7 +97,7 @@ if files:
         status = st.empty()
 
         # =========================
-        # TEMP CSV FILE (SAFE WRITER)
+        # TEMP CSV (STREAM SAFE)
         # =========================
         tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
 
@@ -102,7 +116,6 @@ if files:
         # STREAM PROCESSING
         # =========================
         for f in files:
-
             text = f.getvalue().decode("utf-8", errors="ignore")
 
             for line in text.splitlines():
@@ -113,10 +126,8 @@ if files:
                 cols = parse_line(line, len(ALL_COLUMNS))
                 cols = (cols + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
 
-                # SAFE CSV WRITE
                 writer_csv.writerow(cols)
 
-                # GROUP DATA (SMALL)
                 fu = cols[12]
                 group = identify_group(fu)
 
@@ -142,59 +153,66 @@ if files:
 
         tmp.close()
 
-        status.text("Building datasets...")
-
         # =========================
-        # GROUP DF (FOR FILTERS)
+        # SAVE STATE (IMPORTANT FIX)
         # =========================
-        df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
+        st.session_state.df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
+        st.session_state.csv_path = tmp.name
 
-        # =========================
-        # FILTER UI
-        # =========================
-        st.divider()
-        st.subheader("🔍 Filters")
+        status.text("Ready for filtering")
 
-        col1, col2 = st.columns(2)
+        gc.collect()
 
-        with col1:
-            group_filter = st.multiselect(
-                "Group",
-                options=sorted(df_group["Group"].dropna().unique()),
-                default=[]
-            )
 
-        with col2:
-            search = st.text_input("Search (text match)")
+# =========================
+# FILTER UI (NO RESET ISSUE)
+# =========================
+if st.session_state.df_group is not None:
 
-        df_view = df_group.copy()
+    st.divider()
+    st.subheader("🔍 Filters")
 
-        if group_filter:
-            df_view = df_view[df_view["Group"].isin(group_filter)]
+    df_group = st.session_state.df_group
 
-        if search:
-            df_view = df_view[df_view.astype(str).apply(
-                lambda x: x.str.contains(search, case=False, na=False)
-            ).any(axis=1)]
+    col1, col2 = st.columns(2)
 
-        # =========================
-        # TABLE
-        # =========================
-        st.divider()
-        st.subheader("📊 Results")
+    with col1:
+        group_filter = st.multiselect(
+            "Group",
+            options=sorted(df_group["Group"].dropna().unique()),
+            default=st.session_state.get("group_filter", [])
+        )
 
-        st.dataframe(df_view, use_container_width=True, height=450)
+    with col2:
+        search = st.text_input(
+            "Search text",
+            value=st.session_state.get("search", "")
+        )
 
-        # =========================
-        # CLOSE CSV FILE PROPERLY
-        # =========================
-        tmp_path = tmp.name
-        tmp.close()
+    st.session_state.group_filter = group_filter
+    st.session_state.search = search
 
-        # =========================
-        # DOWNLOAD FULL CSV
-        # =========================
-        with open(tmp_path, "r", encoding="utf-8") as f:
+    df_view = df_group.copy()
+
+    if group_filter:
+        df_view = df_view[df_view["Group"].isin(group_filter)]
+
+    if search:
+        df_view = df_view[df_view.astype(str).apply(
+            lambda x: x.str.contains(search, case=False, na=False)
+        ).any(axis=1)]
+
+    st.divider()
+    st.subheader("📊 Results")
+
+    st.dataframe(df_view, use_container_width=True, height=450)
+
+    # =========================
+    # DOWNLOAD CSV FULL
+    # =========================
+    if st.session_state.csv_path:
+
+        with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
             csv_data = f.read()
 
         st.download_button(
@@ -204,47 +222,48 @@ if files:
             "text/csv"
         )
 
-        # =========================
-        # EXCEL 1 - FILTERED GROUPS
-        # =========================
-        excel_buffer_1 = BytesIO()
+    # =========================
+    # EXCEL - FILTERED
+    # =========================
+    excel_buffer_1 = BytesIO()
 
-        status.text("Generating Excel (Filtered Groups)...")
+    status = st.empty()
+    status.text("Generating Excel (Filtered)...")
 
-        with pd.ExcelWriter(excel_buffer_1, engine="openpyxl") as writer:
-            df_view.to_excel(writer, sheet_name="FilteredGroups", index=False)
+    with pd.ExcelWriter(excel_buffer_1, engine="openpyxl") as writer:
+        df_view.to_excel(writer, sheet_name="FilteredGroups", index=False)
 
-        excel_buffer_1.seek(0)
+    excel_buffer_1.seek(0)
 
-        st.download_button(
-            "⬇️ Download Excel (Filtered Groups)",
-            excel_buffer_1.getvalue(),
-            "BOP_Filtered_Groups.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.download_button(
+        "⬇️ Download Excel (Filtered Groups)",
+        excel_buffer_1.getvalue(),
+        "BOP_Filtered_Groups.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-        # =========================
-        # EXCEL 2 - USAGE LIST (FULL CSV)
-        # =========================
-        excel_buffer_2 = BytesIO()
+    # =========================
+    # EXCEL - FULL USAGE LIST
+    # =========================
+    excel_buffer_2 = BytesIO()
 
-        status.text("Generating Excel (Usage List)...")
+    status.text("Generating Excel (Usage List)...")
 
-        df_usage = pd.read_csv(tmp_path)
+    df_usage = pd.read_csv(st.session_state.csv_path)
 
-        with pd.ExcelWriter(excel_buffer_2, engine="openpyxl") as writer:
-            df_usage.to_excel(writer, sheet_name="Usage List", index=False)
+    with pd.ExcelWriter(excel_buffer_2, engine="openpyxl") as writer:
+        df_usage.to_excel(writer, sheet_name="Usage List", index=False)
 
-        excel_buffer_2.seek(0)
+    excel_buffer_2.seek(0)
 
-        st.download_button(
-            "⬇️ Download Excel (Usage List - FULL)",
-            excel_buffer_2.getvalue(),
-            "BOP_Usage_List.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.download_button(
+        "⬇️ Download Excel (Usage List - FULL)",
+        excel_buffer_2.getvalue(),
+        "BOP_Usage_List.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-        progress.progress(1.0)
-        status.text("Done!")
+    status.text("Done!")
+    st.success("Processing complete")
 
-        gc.collect()
+    gc.collect()
