@@ -12,11 +12,11 @@ import gc
 APP_VERSION = "v2.0.0"
 APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
 
-st.set_page_config(page_title="BOP Dashboard PRO", layout="wide")
+st.set_page_config(page_title="BOP Dashboard", layout="wide")
 
-st.title("📊 BOP Dashboard - Enterprise Edition")
+st.title("📊 BOP Dashboard - Business Unit Dashboard")
 st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
-st.caption("1M+ lines safe | Streaming engine | Power BI style dashboard")
+st.caption("1M+ Lines Safe | Streaming Engine | Power BI Dashboard")
 
 # =========================
 # CONFIG
