@@ -1,18 +1,18 @@
 import streamlit as st
 import pandas as pd
 import re
+import csv
 from io import BytesIO
 import tempfile
 import gc
-import csv
 
 # =========================
-# PAGE CONFIG (UI BETTER)
+# PAGE CONFIG
 # =========================
 st.set_page_config(page_title="BOP Processor PRO", layout="wide")
 
 st.title("📊 BOP Processor - Enterprise Edition")
-st.caption("Handles 1M+ lines safely | No crashes | Fast streaming engine")
+st.caption("1M+ lines safe | Streaming engine | No crashes")
 
 # =========================
 # CONFIG
@@ -32,7 +32,7 @@ GROUP_COLUMNS = [
 ]
 
 # =========================
-# FAST FUNCTIONS
+# FUNCTIONS
 # =========================
 def normalize_number(v):
     return re.sub(r"\D", "", v or "")
@@ -83,18 +83,23 @@ if files:
         status = st.empty()
 
         # =========================
-        # TEMP CSV FILE (NO RAM)
+        # TEMP CSV FILE (SAFE WRITER)
         # =========================
-        tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8")
-        tmp.write(",".join(ALL_COLUMNS) + "\n")
+        tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
+
+        writer_csv = csv.writer(tmp)
+        writer_csv.writerow(ALL_COLUMNS)
 
         group_rows = []
 
         processed = 0
-        total_estimate = sum(len(f.getvalue().decode("utf-8", errors="ignore").splitlines()) for f in files)
+        total_estimate = sum(
+            len(f.getvalue().decode("utf-8", errors="ignore").splitlines())
+            for f in files
+        )
 
         # =========================
-        # STREAM PROCESS
+        # STREAM PROCESSING
         # =========================
         for f in files:
 
@@ -108,10 +113,10 @@ if files:
                 cols = parse_line(line, len(ALL_COLUMNS))
                 cols = (cols + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
 
-                writer_csv = csv.writer(tmp)
-                writer_csv.writerow(ALL_COLUMNS)
+                # SAFE CSV WRITE
+                writer_csv.writerow(cols)
 
-                # GROUP DATA (SMALL ONLY)
+                # GROUP DATA (SMALL)
                 fu = cols[12]
                 group = identify_group(fu)
 
@@ -137,15 +142,15 @@ if files:
 
         tmp.close()
 
-        status.text("Loading results...")
+        status.text("Building datasets...")
 
         # =========================
-        # GROUP DATAFRAME (FOR UI FILTERS)
+        # GROUP DF (FOR FILTERS)
         # =========================
         df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
 
         # =========================
-        # 🔥 UI FILTERS (FAST)
+        # FILTER UI
         # =========================
         st.divider()
         st.subheader("🔍 Filters")
@@ -160,9 +165,8 @@ if files:
             )
 
         with col2:
-            search = st.text_input("Search text (Description / Part Number)")
+            search = st.text_input("Search (text match)")
 
-        # APPLY FILTERS
         df_view = df_group.copy()
 
         if group_filter:
@@ -174,27 +178,27 @@ if files:
             ).any(axis=1)]
 
         # =========================
-        # UI TABLE (PRETTY)
+        # TABLE
         # =========================
         st.divider()
         st.subheader("📊 Results")
 
-        st.dataframe(
-            df_view,
-            use_container_width=True,
-            height=450
-        )
+        st.dataframe(df_view, use_container_width=True, height=450)
 
         # =========================
-        # DOWNLOAD CSV (FULL)
+        # CLOSE CSV FILE PROPERLY
         # =========================
-        st.divider()
+        tmp_path = tmp.name
+        tmp.close()
 
-        with open(tmp.name, "r", encoding="utf-8") as f:
+        # =========================
+        # DOWNLOAD FULL CSV
+        # =========================
+        with open(tmp_path, "r", encoding="utf-8") as f:
             csv_data = f.read()
 
         st.download_button(
-            "⬇️ Download FULL CSV (1M+)",
+            "⬇️ Download FULL CSV (1M+ safe)",
             csv_data,
             "BOP_Output.csv",
             "text/csv"
@@ -204,39 +208,43 @@ if files:
         # EXCEL 1 - FILTERED GROUPS
         # =========================
         excel_buffer_1 = BytesIO()
-        
+
         status.text("Generating Excel (Filtered Groups)...")
-        
+
         with pd.ExcelWriter(excel_buffer_1, engine="openpyxl") as writer:
             df_view.to_excel(writer, sheet_name="FilteredGroups", index=False)
-        
+
         excel_buffer_1.seek(0)
-        
+
         st.download_button(
             "⬇️ Download Excel (Filtered Groups)",
             excel_buffer_1.getvalue(),
             "BOP_Filtered_Groups.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        
+
         # =========================
-        # EXCEL 2 - USAGE LIST (FULL DATA)
+        # EXCEL 2 - USAGE LIST (FULL CSV)
         # =========================
         excel_buffer_2 = BytesIO()
-        
-        status.text("Generating Excel (Usage List - Full Data)...")
-        
-        # read from temp CSV (NO RAM explosion)
-        df_usage = pd.read_csv(tmp.name)
-        
+
+        status.text("Generating Excel (Usage List)...")
+
+        df_usage = pd.read_csv(tmp_path)
+
         with pd.ExcelWriter(excel_buffer_2, engine="openpyxl") as writer:
             df_usage.to_excel(writer, sheet_name="Usage List", index=False)
-        
+
         excel_buffer_2.seek(0)
-        
+
         st.download_button(
-            "⬇️ Download Excel (Usage List - Full)",
+            "⬇️ Download Excel (Usage List - FULL)",
             excel_buffer_2.getvalue(),
             "BOP_Usage_List.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        progress.progress(1.0)
+        status.text("Done!")
+
+        gc.collect()
