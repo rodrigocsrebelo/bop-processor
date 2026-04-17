@@ -3,7 +3,7 @@ import pandas as pd
 import re
 from io import StringIO, BytesIO
 
-st.title("📊 BOP Processor (Optimized)")
+st.title("📊 BOP Processor")
 
 # =========================
 # CONFIG
@@ -53,17 +53,17 @@ def parse_line(line, num_columns):
 # =========================
 # UI
 # =========================
-uploaded_file = st.file_uploader("📂 Upload do ficheiro TXT", type=["txt"])
+uploaded_file = st.file_uploader("📂 Upload TXT file", type=["txt"])
 
 if uploaded_file:
-    st.success("Arquivo carregado!")
+    st.success("File uploaded successfully!")
 
     text_data = uploaded_file.read().decode("utf-8", errors="ignore")
     lines = text_data.splitlines()
 
-    st.write(f"📏 Total de linhas: {len(lines):,}")
+    st.write(f"📏 Total lines: {len(lines):,}")
 
-    if st.button("🚀 Processar"):
+    if st.button("🚀 Process"):
 
         rows_complete = []
         rows_group = []
@@ -87,7 +87,7 @@ if uploaded_file:
 
             rows_complete.append(row)
 
-            final_usage = row[12]  # index of "Final Usage"
+            final_usage = row[12]  # "Final Usage"
             group_name = identify_group_local(final_usage)
 
             if group_name:
@@ -113,7 +113,7 @@ if uploaded_file:
         df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
         df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
 
-        st.success("✅ Processamento concluído!")
+        st.success("✅ Processing completed!")
 
         # =========================
         # CSV DOWNLOAD
@@ -122,7 +122,7 @@ if uploaded_file:
         df_complete.to_csv(csv_buffer, index=False)
 
         st.download_button(
-            "⬇️ Download CSV Completo",
+            "⬇️ Download Full CSV",
             csv_buffer.getvalue(),
             "BOP_Output.csv",
             "text/csv"
