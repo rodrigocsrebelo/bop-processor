@@ -51,17 +51,17 @@ def parse_line(line, num_columns):
     return cols[:num_columns]
 
 # =========================
-# UI
+# UI - MULTIPLE FILE UPLOAD
 # =========================
-uploaded_file = st.file_uploader("📂 Upload TXT file", type=["txt"])
+uploaded_files = st.file_uploader(
+    "📂 Upload TXT files",
+    type=["txt"],
+    accept_multiple_files=True
+)
 
-if uploaded_file:
-    st.success("File uploaded successfully!")
+if uploaded_files:
 
-    text_data = uploaded_file.read().decode("utf-8", errors="ignore")
-    lines = text_data.splitlines()
-
-    st.write(f"📏 Total lines: {len(lines):,}")
+    st.success(f"{len(uploaded_files)} file(s) uploaded!")
 
     if st.button("🚀 Process"):
 
@@ -69,43 +69,61 @@ if uploaded_file:
         rows_group = []
 
         progress = st.progress(0)
-        total = len(lines)
+        status = st.empty()
 
-        # local bindings (speed boost)
+        # count total lines first (for correct progress)
+        total_lines = 0
+        file_lines = []
+
+        for f in uploaded_files:
+            text = f.read().decode("utf-8", errors="ignore")
+            lines = text.splitlines()
+            file_lines.append(lines)
+            total_lines += len(lines)
+
+        processed = 0
+
         parse_line_local = parse_line
         identify_group_local = identify_group
 
-        for i, line in enumerate(lines):
+        # =========================
+        # PROCESS FILES
+        # =========================
+        for file_idx, lines in enumerate(file_lines):
 
-            if not line or line.startswith("Level"):
-                continue
+            for i, line in enumerate(lines):
 
-            cols = parse_line_local(line, len(ALL_COLUMNS))
+                if not line or line.startswith("Level"):
+                    continue
 
-            # FAST: avoid dict(zip)
-            row = [cols[j] if j < len(cols) else "" for j in range(len(ALL_COLUMNS))]
+                cols = parse_line_local(line, len(ALL_COLUMNS))
 
-            rows_complete.append(row)
+                row = [cols[j] if j < len(cols) else "" for j in range(len(ALL_COLUMNS))]
+                rows_complete.append(row)
 
-            final_usage = row[12]  # "Final Usage"
-            group_name = identify_group_local(final_usage)
+                final_usage = row[12]
+                group_name = identify_group_local(final_usage)
 
-            if group_name:
-                rows_group.append([
-                    group_name,
-                    final_usage,
-                    row[0],
-                    row[2],
-                    row[3],
-                    row[4],
-                    row[12],
-                    row[13],
-                    row[18],
-                    row[19],
-                ])
+                if group_name:
+                    rows_group.append([
+                        group_name,
+                        final_usage,
+                        row[0],
+                        row[2],
+                        row[3],
+                        row[4],
+                        row[12],
+                        row[13],
+                        row[18],
+                        row[19],
+                    ])
 
-            if i % 5000 == 0:
-                progress.progress(i / total)
+                processed += 1
+
+                if processed % 500 == 0:
+                    percent = processed / total_lines
+                    progress.progress(min(percent, 1.0))
+                    status.text(f"🔄 Processing... {processed}/{total_lines}")
 
         # =========================
         # DATAFRAMES
@@ -113,23 +131,26 @@ if uploaded_file:
         df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
         df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
 
-        st.success("✅ Processing completed!")
+        progress.progress(1.0)
+        status.text("✅ Processing complete!")
+
+        st.success("Done!")
 
         # =========================
-        # CSV DOWNLOAD
+        # CSV
         # =========================
         csv_buffer = StringIO()
         df_complete.to_csv(csv_buffer, index=False)
 
         st.download_button(
-            "⬇️ Download Full CSV",
+            "⬇️ Download CSV",
             csv_buffer.getvalue(),
             "BOP_Output.csv",
             "text/csv"
         )
 
         # =========================
-        # EXCEL DOWNLOAD
+        # EXCEL
         # =========================
         excel_buffer = BytesIO()
 
