@@ -124,9 +124,9 @@ if uploaded_file:
         # =========================
         excel_buffer = BytesIO()
 
-        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-            df_complete.to_excel(writer, sheet_name="Complete", index=False)
-            df_group.to_excel(writer, sheet_name="ByGroups", index=False)
+    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+    df_complete.to_excel(writer, sheet_name="Complete", index=False)
+    df_group.to_excel(writer, sheet_name="ByGroups", index=False)
 
         st.download_button(
             label="⬇️ Download Excel",
