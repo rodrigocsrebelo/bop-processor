@@ -3,7 +3,9 @@ import pandas as pd
 import re
 from io import StringIO, BytesIO
 
-st.title("📊 BOP Processor")
+st.set_page_config(page_title="BOP Processor", layout="wide")
+
+st.title("📊 BOP Processor PRO")
 
 # =========================
 # CONFIG
@@ -23,7 +25,53 @@ GROUP_COLUMNS = [
 ]
 
 # =========================
-# FUNCTIONS
+# CACHE (IMPORTANT SPEED BOOST)
+# =========================
+@st.cache_data
+def process_files(file_data):
+    rows_complete = []
+    rows_group = []
+
+    total_lines = sum(len(lines) for lines in file_data)
+    processed = 0
+
+    for lines in file_data:
+        for line in lines:
+
+            if not line or line.startswith("Level"):
+                continue
+
+            cols = parse_line(line, len(ALL_COLUMNS))
+            row = [cols[j] if j < len(cols) else "" for j in range(len(ALL_COLUMNS))]
+            rows_complete.append(row)
+
+            final_usage = row[12]
+            group_name = identify_group(final_usage)
+
+            if group_name:
+                rows_group.append([
+                    group_name,
+                    final_usage,
+                    row[0],
+                    row[2],
+                    row[3],
+                    row[4],
+                    row[12],
+                    row[13],
+                    row[18],
+                    row[19],
+                ])
+
+            processed += 1
+
+    df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
+    df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
+
+    return df_complete, df_group
+
+
+# =========================
+# FUNCTIONS (FAST)
 # =========================
 def normalize_number(value: str) -> str:
     return re.sub(r"\D", "", value)
@@ -31,15 +79,15 @@ def normalize_number(value: str) -> str:
 def identify_group(final_usage: str) -> str:
     fu = normalize_number(final_usage)
     if fu.startswith(("7612","7609","764","750","751","752")):
-        return "Group CP1"
+        return "CP1"
     if fu.startswith("0263"):
-        return "Group CP2"
+        return "CP2"
     if fu.startswith(("7620","7607")):
-        return "Group CP1-PRO"
+        return "CP1-PRO"
     if fu.startswith("8613600"):
-        return "Group Bombardier"
+        return "Bombardier"
     if fu.startswith("1270020"):
-        return "Group E-bike"
+        return "E-bike"
     return ""
 
 def parse_line(line, num_columns):
@@ -49,6 +97,7 @@ def parse_line(line, num_columns):
     if len(cols) < num_columns:
         cols += [""] * (num_columns - len(cols))
     return cols[:num_columns]
+
 
 # =========================
 # UI
@@ -61,82 +110,62 @@ uploaded_files = st.file_uploader(
 
 if uploaded_files:
 
-    st.success(f"{len(uploaded_files)} file(s) uploaded!")
+    st.success(f"{len(uploaded_files)} file(s) loaded")
 
     if st.button("🚀 Process"):
-
-        rows_complete = []
-        rows_group = []
-
-        progress = st.progress(0)
-        status = st.empty()
 
         # =========================
         # LOAD FILES
         # =========================
-        file_lines = []
-        total_lines = 0
+        file_data = []
 
         for f in uploaded_files:
             text = f.read().decode("utf-8", errors="ignore")
-            lines = text.splitlines()
-            file_lines.append(lines)
-            total_lines += len(lines)
+            file_data.append(text.splitlines())
 
-        processed = 0
+        progress = st.progress(0)
+        status = st.empty()
 
-        parse_line_local = parse_line
-        identify_group_local = identify_group
+        status.text("⚡ Processing files...")
 
-        # =========================
-        # PROCESS
-        # =========================
-        for lines in file_lines:
-            for line in lines:
+        df_complete, df_group = process_files(file_data)
 
-                if not line or line.startswith("Level"):
-                    continue
+        progress.progress(1.0)
+        status.text("✅ Done!")
 
-                cols = parse_line_local(line, len(ALL_COLUMNS))
-
-                row = [cols[j] if j < len(cols) else "" for j in range(len(ALL_COLUMNS))]
-                rows_complete.append(row)
-
-                final_usage = row[12]
-                group_name = identify_group_local(final_usage)
-
-                if group_name:
-                    rows_group.append([
-                        group_name,
-                        final_usage,
-                        row[0],
-                        row[2],
-                        row[3],
-                        row[4],
-                        row[12],
-                        row[13],
-                        row[18],
-                        row[19],
-                    ])
-
-                processed += 1
-
-                if processed % 500 == 0:
-                    percent = processed / total_lines
-                    progress.progress(min(percent, 1.0))
-                    status.text(f"🔄 Processing... {processed}/{total_lines}")
+        st.success("Processing complete!")
 
         # =========================
-        # DATAFRAMES
+        # FILTER UI
         # =========================
-        df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
-        df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
+        st.subheader("🔍 Filters")
 
-        progress.progress(0.98)
-        status.text("📊 Generating Excel file...")
+        group_filter = st.multiselect(
+            "Filter by Group",
+            options=df_group["Group"].unique()
+        )
+
+        search_text = st.text_input("Search (Description / Part Number)")
 
         # =========================
-        # CSV
+        # APPLY FILTERS
+        # =========================
+        df_view = df_group.copy()
+
+        if group_filter:
+            df_view = df_view[df_view["Group"].isin(group_filter)]
+
+        if search_text:
+            mask = df_view.astype(str).apply(
+                lambda x: x.str.contains(search_text, case=False, na=False)
+            ).any(axis=1)
+            df_view = df_view[mask]
+
+        st.subheader("📊 Results")
+        st.dataframe(df_view, use_container_width=True)
+
+        # =========================
+        # DOWNLOAD CSV
         # =========================
         csv_buffer = StringIO()
         df_complete.to_csv(csv_buffer, index=False)
@@ -149,24 +178,15 @@ if uploaded_files:
         )
 
         # =========================
-        # EXCEL (FIXED + SAFE)
+        # DOWNLOAD EXCEL
         # =========================
         excel_buffer = BytesIO()
 
-        status.text("📊 Writing Excel - Complete sheet...")
-
         with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
             df_complete.to_excel(writer, sheet_name="Complete", index=False)
-
-            status.text("📊 Writing Excel - Groups sheet...")
             df_group.to_excel(writer, sheet_name="ByGroups", index=False)
 
         excel_buffer.seek(0)
-
-        status.text("📊 Finalizing file...")
-        progress.progress(1.0)
-
-        st.success("✅ Processing complete!")
 
         st.download_button(
             "⬇️ Download Excel",
