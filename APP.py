@@ -3,14 +3,11 @@ import pandas as pd
 import re
 from io import StringIO, BytesIO
 
-
-st.title("📊 BOP Processor")
+st.title("📊 BOP Processor (Optimized)")
 
 # =========================
 # CONFIG
 # =========================
-MAX_ROWS_PER_FILE = 999900
-
 ALL_COLUMNS = [
     "Level","Search Object (SO)","Description DC","Item Quantity DU","Direct Usage","Description DU",
     "Status DU (MMA/DOC)","Plant status DU (MMA)","Status DU (BOM)","System Desc. DU","Plant DU (BOM)",
@@ -54,7 +51,7 @@ def parse_line(line, num_columns):
     return cols[:num_columns]
 
 # =========================
-# UI - FILE UPLOAD
+# UI
 # =========================
 uploaded_file = st.file_uploader("📂 Upload do ficheiro TXT", type=["txt"])
 
@@ -67,61 +64,72 @@ if uploaded_file:
     st.write(f"📏 Total de linhas: {len(lines):,}")
 
     if st.button("🚀 Processar"):
+
         rows_complete = []
         rows_group = []
 
         progress = st.progress(0)
+        total = len(lines)
+
+        # local bindings (speed boost)
+        parse_line_local = parse_line
+        identify_group_local = identify_group
 
         for i, line in enumerate(lines):
-            line = line.strip()
+
             if not line or line.startswith("Level"):
                 continue
 
-            cols = parse_line(line, len(ALL_COLUMNS))
-            row = dict(zip(ALL_COLUMNS, cols))
+            cols = parse_line_local(line, len(ALL_COLUMNS))
 
-            group_name = identify_group(row["Final Usage"])
-
-            if group_name:
-                rows_group.append({
-                    "Group": group_name,
-                    "Part Number": row["Final Usage"],
-                    "Level": row["Level"],
-                    "Description DC": row["Description DC"],
-                    "Item Quantity DU": row["Item Quantity DU"],
-                    "Direct Usage": row["Direct Usage"],
-                    "Final Usage": row["Final Usage"],
-                    "Description FU": row["Description FU"],
-                    "Plant FU (BOM)": row["Plant FU (BOM)"],
-                    "FU Charact. 1 Value": row["FU Charact. 1 Value"]
-                })
+            # FAST: avoid dict(zip)
+            row = [cols[j] if j < len(cols) else "" for j in range(len(ALL_COLUMNS))]
 
             rows_complete.append(row)
 
-            # Atualiza barra
-            if i % 1000 == 0:
-                progress.progress(i / len(lines))
+            final_usage = row[12]  # index of "Final Usage"
+            group_name = identify_group_local(final_usage)
 
+            if group_name:
+                rows_group.append([
+                    group_name,
+                    final_usage,
+                    row[0],
+                    row[2],
+                    row[3],
+                    row[4],
+                    row[12],
+                    row[13],
+                    row[18],
+                    row[19],
+                ])
+
+            if i % 5000 == 0:
+                progress.progress(i / total)
+
+        # =========================
+        # DATAFRAMES
+        # =========================
         df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
         df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
 
         st.success("✅ Processamento concluído!")
 
         # =========================
-        # DOWNLOAD CSV
+        # CSV DOWNLOAD
         # =========================
         csv_buffer = StringIO()
         df_complete.to_csv(csv_buffer, index=False)
 
         st.download_button(
-            label="⬇️ Download CSV Completo",
-            data=csv_buffer.getvalue(),
-            file_name="BOP_Output.csv",
-            mime="text/csv"
+            "⬇️ Download CSV Completo",
+            csv_buffer.getvalue(),
+            "BOP_Output.csv",
+            "text/csv"
         )
 
         # =========================
-        # DOWNLOAD EXCEL
+        # EXCEL DOWNLOAD
         # =========================
         excel_buffer = BytesIO()
 
@@ -130,8 +138,8 @@ if uploaded_file:
             df_group.to_excel(writer, sheet_name="ByGroups", index=False)
 
         st.download_button(
-            label="⬇️ Download Excel",
-            data=excel_buffer.getvalue(),
-            file_name="BOP_Report.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "⬇️ Download Excel",
+            excel_buffer.getvalue(),
+            "BOP_Report.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
