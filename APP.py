@@ -7,19 +7,19 @@ import tempfile
 import gc
 
 # =========================
-# APP META
+# APP CONFIG
 # =========================
-APP_VERSION = "v2.0.0"
+APP_VERSION = "v3.0.0"
 APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
 
-st.set_page_config(page_title="BOP Dashboard", layout="wide")
+st.set_page_config(page_title="BOP Dashboard PRO", layout="wide")
 
-st.title("📊 BOP Dashboard - Business Unit Dashboard")
+st.title("📊 BOP Dashboard PRO")
 st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
-st.caption("1M+ Lines Safe | Streaming Engine | Power BI Dashboard")
+st.caption("Enterprise BI Engine | 1M+ lines safe processing")
 
 # =========================
-# CONFIG
+# DATA CONFIG
 # =========================
 ALL_COLUMNS = [
     "Level","Search Object (SO)","Description DC","Item Quantity DU","Direct Usage","Description DU",
@@ -53,7 +53,7 @@ def identify_group(fu):
         return "Bombardier"
     if fu.startswith("1270020"):
         return "E-bike"
-    return ""
+    return "Other"
 
 def parse_line(line, ncols):
     line = line.strip()
@@ -69,9 +69,9 @@ def parse_line(line, ncols):
 
 
 # =========================
-# SIDEBAR
+# SIDEBAR CONTROLS
 # =========================
-st.sidebar.header("Controls")
+st.sidebar.header("⚙ Controls")
 
 files = st.sidebar.file_uploader(
     "Upload TXT files",
@@ -79,10 +79,14 @@ files = st.sidebar.file_uploader(
     accept_multiple_files=True
 )
 
-run = st.sidebar.button("🚀 Process Data")
+run = st.sidebar.button("🚀 Process")
 
-group_filter = st.sidebar.multiselect("Filter Group", [])
-search = st.sidebar.text_input("Search")
+reset = st.sidebar.button("🔄 Reset Filters")
+
+# reset filters
+if reset:
+    st.session_state.clear()
+    st.rerun()
 
 # =========================
 # SESSION STATE
@@ -95,7 +99,7 @@ if "csv_path" not in st.session_state:
 
 
 # =========================
-# PROCESSING
+# PROCESS DATA
 # =========================
 if files and run:
 
@@ -104,16 +108,12 @@ if files and run:
 
     tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
 
-    writer_csv = csv.writer(tmp)
-    writer_csv.writerow(ALL_COLUMNS)
+    writer = csv.writer(tmp)
+    writer.writerow(ALL_COLUMNS)
 
     group_rows = []
 
-    total = sum(
-        len(f.getvalue().decode("utf-8", errors="ignore").splitlines())
-        for f in files
-    )
-
+    total = sum(len(f.getvalue().decode("utf-8", errors="ignore").splitlines()) for f in files)
     processed = 0
 
     for f in files:
@@ -127,7 +127,7 @@ if files and run:
             cols = parse_line(line, len(ALL_COLUMNS))
             cols = (cols + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
 
-            writer_csv.writerow(cols)
+            writer.writerow(cols)
 
             fu = cols[12]
             group = identify_group(fu)
@@ -157,18 +157,37 @@ if files and run:
     st.session_state.df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
     st.session_state.csv_path = tmp.name
 
-    status.text("Ready")
+    status.text("Processing completed")
 
 
 # =========================
-# DASHBOARD (ONLY IF DATA EXISTS)
+# DASHBOARD
 # =========================
 if st.session_state.df_group is not None:
 
-    df_group = st.session_state.df_group
+    df_group = st.session_state.df_group.copy()
 
     # =========================
-    # FILTERS APPLY
+    # FILTER OPTIONS (FIXED)
+    # =========================
+    group_options = sorted(df_group["Group"].dropna().unique())
+
+    group_filter = st.sidebar.multiselect(
+        "Filter Group",
+        options=group_options,
+        default=st.session_state.get("group_filter", [])
+    )
+
+    search = st.sidebar.text_input(
+        "Search",
+        value=st.session_state.get("search", "")
+    )
+
+    st.session_state.group_filter = group_filter
+    st.session_state.search = search
+
+    # =========================
+    # APPLY FILTERS
     # =========================
     df_view = df_group.copy()
 
@@ -186,12 +205,12 @@ if st.session_state.df_group is not None:
     st.divider()
     st.subheader("📊 Dashboard Overview")
 
-    col1, col2, col3, col4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
 
-    col1.metric("Total Rows", len(df_group))
-    col2.metric("Filtered Rows", len(df_view))
-    col3.metric("Groups", df_group["Group"].nunique())
-    col4.metric("CP1 Count", (df_group["Group"] == "CP1").sum())
+    c1.metric("Total Rows", len(df_group))
+    c2.metric("Filtered", len(df_view))
+    c3.metric("Groups", df_group["Group"].nunique())
+    c4.metric("CP1", (df_group["Group"] == "CP1").sum())
 
     # =========================
     # CHARTS
@@ -199,23 +218,29 @@ if st.session_state.df_group is not None:
     st.divider()
     st.subheader("📈 Analytics")
 
-    col1, col2 = st.columns(2)
+    c1, c2 = st.columns(2)
 
-    with col1:
-        st.write("Group Distribution")
+    with c1:
         st.bar_chart(df_group["Group"].value_counts())
 
-    with col2:
-        st.write("Filtered Distribution")
+    with c2:
         st.bar_chart(df_view["Group"].value_counts())
 
     # =========================
-    # TABLE
+    # FULL PREVIEW
     # =========================
     st.divider()
-    st.subheader("📋 Data Explorer")
+    st.subheader("📦 FULL DATA (Usage List)")
 
-    st.dataframe(df_view, use_container_width=True, height=500, hide_index=True)
+    st.dataframe(df_group, use_container_width=True, height=300)
+
+    # =========================
+    # FILTERED TABLE
+    # =========================
+    st.divider()
+    st.subheader("📋 Filtered Data")
+
+    st.dataframe(df_view, use_container_width=True, height=500)
 
     # =========================
     # DOWNLOAD CSV FULL
@@ -235,19 +260,16 @@ if st.session_state.df_group is not None:
     # =========================
     # EXCEL FILTERED
     # =========================
-    excel_1 = BytesIO()
+    excel1 = BytesIO()
 
-    status = st.empty()
-    status.text("Generating Excel (Filtered)...")
-
-    with pd.ExcelWriter(excel_1, engine="openpyxl") as writer:
+    with pd.ExcelWriter(excel1, engine="openpyxl") as writer:
         df_view.to_excel(writer, sheet_name="Filtered", index=False)
 
-    excel_1.seek(0)
+    excel1.seek(0)
 
     st.download_button(
         "⬇️ Download Excel (Filtered)",
-        excel_1.getvalue(),
+        excel1.getvalue(),
         "BOP_Filtered.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
@@ -255,25 +277,20 @@ if st.session_state.df_group is not None:
     # =========================
     # EXCEL FULL
     # =========================
-    excel_2 = BytesIO()
+    excel2 = BytesIO()
 
-    status.text("Generating Excel (Usage List)...")
+    with pd.ExcelWriter(excel2, engine="openpyxl") as writer:
+        df_group.to_excel(writer, sheet_name="Usage List", index=False)
 
-    df_usage = pd.read_csv(st.session_state.csv_path)
-
-    with pd.ExcelWriter(excel_2, engine="openpyxl") as writer:
-        df_usage.to_excel(writer, sheet_name="Usage List", index=False)
-
-    excel_2.seek(0)
+    excel2.seek(0)
 
     st.download_button(
-        "⬇️ Download Excel (Usage List FULL)",
-        excel_2.getvalue(),
+        "⬇️ Download Excel (FULL Usage List)",
+        excel2.getvalue(),
         "BOP_Usage_List.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    status.text("Done")
-    st.success("Dashboard ready")
+    st.success("Ready ✔")
 
     gc.collect()
