@@ -4,6 +4,7 @@ import re
 from io import BytesIO
 import tempfile
 import gc
+import csv
 
 # =========================
 # PAGE CONFIG (UI BETTER)
@@ -107,7 +108,8 @@ if files:
                 cols = parse_line(line, len(ALL_COLUMNS))
                 cols = (cols + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
 
-                tmp.write(",".join(cols) + "\n")
+                writer_csv = csv.writer(tmp)
+                writer_csv.writerow(ALL_COLUMNS)
 
                 # GROUP DATA (SMALL ONLY)
                 fu = cols[12]
