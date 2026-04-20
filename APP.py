@@ -10,14 +10,37 @@ from openpyxl import Workbook
 # =========================
 # CONFIG
 # =========================
-APP_VERSION = "v5.0.0"
-APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis)"
+APP_VERSION = "v5.1.0"
+APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis) | PDM"
 
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
 st.title("📊 BOP HU-WHERE-USED | XC-CP Support")
 st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
-st.caption("⚡ Handles 1M+ rows | Streaming mode (no RAM crash)")
+st.caption("⚡ Handles 1M+ rows | Streaming mode")
+
+# =========================
+# USER LOGIN
+# =========================
+if "user" not in st.session_state:
+    st.session_state.user = ""
+
+if not st.session_state.user:
+    with st.sidebar:
+        st.subheader("👤 User Login")
+        user_input = st.text_input("Enter your email", key="login_input")
+
+        if st.button("Login", key="login_btn"):
+            if "@" in user_input:
+                st.session_state.user = user_input
+                st.rerun()
+            else:
+                st.error("Enter a valid email")
+
+    st.stop()
+
+st.sidebar.success(f"👤 {st.session_state.user}")
+st.success(f"Welcome {st.session_state.user} 👋")
 
 # =========================
 # DATA STRUCTURE
@@ -89,6 +112,9 @@ if "df_group" not in st.session_state:
 
 if "csv_path" not in st.session_state:
     st.session_state.csv_path = None
+
+if "total_rows" not in st.session_state:
+    st.session_state.total_rows = 0
 
 if "group_filter" not in st.session_state:
     st.session_state.group_filter = []
@@ -165,6 +191,7 @@ if run:
 
     st.session_state.df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
     st.session_state.csv_path = tmp.name
+    st.session_state.total_rows = processed
 
     status.success("✅ Processing completed")
 
@@ -231,7 +258,7 @@ with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
 st.download_button(
     "⬇️ Download FULL CSV",
     csv_data,
-    "BOP_Output.csv",
+    f"BOP_{st.session_state.user}.csv",
     "text/csv",
     key="download_csv"
 )
@@ -250,13 +277,13 @@ excel_groups.seek(0)
 st.download_button(
     "⬇️ Download Excel (Groups)",
     excel_groups.getvalue(),
-    "BOP_Groups.xlsx",
+    f"BOP_{st.session_state.user}_Groups.xlsx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     key="download_groups"
 )
 
 # =========================
-# FULL EXCEL (STREAMING)
+# FULL EXCEL
 # =========================
 st.divider()
 
@@ -271,20 +298,24 @@ if st.button("📦 Generate FULL Excel (Usage List)", key="btn_excel_full"):
 
     ws.append(ALL_COLUMNS)
 
+    total_rows = st.session_state.total_rows
+    count = 0
+
+    progress_excel = st.progress(0)
+
     with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
         next(reader)
-
-        count = 0
-        progress_excel = st.progress(0)
 
         for row in reader:
             ws.append(row)
             count += 1
 
             if count % 10000 == 0:
-                progress_excel.progress(min(count / 1_000_000, 1.0))
+                progress_excel.progress(min(count / total_rows, 1.0))
                 status.text(f"Writing {count:,} rows")
+
+    progress_excel.progress(1.0)
 
     wb.save(excel_buffer)
     excel_buffer.seek(0)
@@ -292,7 +323,7 @@ if st.button("📦 Generate FULL Excel (Usage List)", key="btn_excel_full"):
     st.download_button(
         "⬇️ Download FULL Excel",
         excel_buffer.getvalue(),
-        "BOP_Usage_List.xlsx",
+        f"BOP_{st.session_state.user}_Usage_List.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="download_full_excel"
     )
