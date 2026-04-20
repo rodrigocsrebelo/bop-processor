@@ -10,7 +10,7 @@ from openpyxl import Workbook
 # =========================
 # CONFIG
 # =========================
-MAX_ROWS_PER_SHEET = 999000
+MAX_ROWS_PER_SHEET = 900000
 
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
