@@ -194,7 +194,7 @@ if st.button("📦 Generate FULL Excel (Usage List)", key="btn_excel_full"):
     progress_excel = st.progress(0)
 
     with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
+        reader = csv.reader(f, delimiter=",", quoting=csv.QUOTE_MINIMAL)
         next(reader)
 
         for row in reader:
