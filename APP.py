@@ -15,7 +15,7 @@ MAX_ROWS_PER_SHEET = 999000
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
 st.title("📊 BOP HU-WHERE-USED")
-st.caption("Handles 1M+ rows | Streaming mode")
+st.caption("Owner: Rebelo Rodrigo (SO/OPM2.6.1-Lis) | PDM Team for PCN/PTN/PDN")
 
 # =========================
 # DATA STRUCTURE
@@ -73,7 +73,8 @@ files = st.sidebar.file_uploader(
     "Upload TXT files",
     type=["txt"],
     accept_multiple_files=True,
-    key="upload_files"
+    key="upload_files",
+    width="stretch"
 )
 
 run = st.sidebar.button("🚀 Process", key="run_btn")
