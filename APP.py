@@ -96,13 +96,7 @@ if "group_filter" not in st.session_state:
 
 if "search" not in st.session_state:
     st.session_state.search = ""
-
-# RESET FILTERS
-if reset:
-    st.session_state.group_filter = []
-    st.session_state.search = ""
-    st.rerun()
-
+    
 # =========================
 # NO FILE
 # =========================
