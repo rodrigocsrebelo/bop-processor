@@ -10,13 +10,11 @@ from openpyxl import Workbook
 # =========================
 # CONFIG
 # =========================
-APP_VERSION = "v5.1.0"
-APP_OWNER = "Rebelo Rodrigo (SO/OPM2.6.1-Lis) | PDM"
+MAX_ROWS_PER_SHEET = 999000
 
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
-st.title("📊 BOP HU-WHERE-USED | XC-CP Support")
-st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
+st.title("📊 BOP HU-WHERE-USED")
 st.caption("⚡ Handles 1M+ rows | Streaming mode")
 
 # =========================
@@ -99,9 +97,7 @@ if "group_filter" not in st.session_state:
 if "search" not in st.session_state:
     st.session_state.search = ""
 
-# =========================
 # RESET FILTERS
-# =========================
 if reset:
     st.session_state.group_filter = []
     st.session_state.search = ""
@@ -115,7 +111,7 @@ if not files:
     st.stop()
 
 # =========================
-# PROCESS FILES
+# PROCESS
 # =========================
 if run:
 
@@ -182,25 +178,77 @@ if st.session_state.df_group is None:
 df_group = st.session_state.df_group
 
 # =========================
+# FULL EXCEL (FIRST)
+# =========================
+st.divider()
+
+if st.button("📦 Generate FULL Excel (Usage List)", key="btn_excel_full"):
+
+    status = st.empty()
+    status.info("Generating Excel (large file)...")
+
+    excel_buffer = BytesIO()
+    wb = Workbook(write_only=True)
+
+    total_rows = st.session_state.total_rows
+    count = 0
+    sheet_count = 1
+
+    ws = wb.create_sheet(f"Usage_1")
+    ws.append(ALL_COLUMNS)
+
+    progress_excel = st.progress(0)
+
+    with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader)
+
+        for row in reader:
+
+            if count > 0 and count % MAX_ROWS_PER_SHEET == 0:
+                sheet_count += 1
+                ws = wb.create_sheet(f"Usage_{sheet_count}")
+                ws.append(ALL_COLUMNS)
+
+            ws.append(row)
+            count += 1
+
+            if count % 10000 == 0:
+                progress_excel.progress(min(count / total_rows, 1.0))
+                status.text(f"Writing {count:,} rows")
+
+    progress_excel.progress(1.0)
+
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+
+    st.download_button(
+        "⬇️ Download FULL Excel",
+        excel_buffer.getvalue(),
+        "BOP_Usage_List.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="download_full_excel"
+    )
+
+    status.success(f"✅ Excel ready ({sheet_count} sheets)")
+
+# =========================
 # FILTERS
 # =========================
 group_filter = st.sidebar.multiselect(
     "Filter Group",
     sorted(df_group["Group"].unique()),
-    default=st.session_state.group_filter,
-    key="filter_group"
+    default=st.session_state.group_filter
 )
 
 search = st.sidebar.text_input(
     "Search",
-    value=st.session_state.search,
-    key="filter_search"
+    value=st.session_state.search
 )
 
 st.session_state.group_filter = group_filter
 st.session_state.search = search
 
-# APPLY FILTERS
 df_view = df_group.copy()
 
 if group_filter:
@@ -221,9 +269,7 @@ c1.metric("Total Rows", len(df_group))
 c2.metric("Filtered", len(df_view))
 c3.metric("Groups", df_group["Group"].nunique())
 
-st.divider()
 st.subheader("📊 Groups Data")
-
 st.dataframe(df_view, width="stretch", height=500)
 
 # =========================
@@ -235,9 +281,8 @@ with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
 st.download_button(
     "⬇️ Download FULL CSV",
     csv_data,
-    f"BOP_{st.session_state.user}.csv",
-    "text/csv",
-    key="download_csv"
+    "BOP_Output.csv",
+    "text/csv"
 )
 
 # =========================
@@ -245,66 +290,16 @@ st.download_button(
 # =========================
 excel_groups = BytesIO()
 
-with st.spinner("Generating Groups Excel..."):
-    with pd.ExcelWriter(excel_groups, engine="openpyxl") as writer:
-        df_view.to_excel(writer, sheet_name="Groups", index=False)
+with pd.ExcelWriter(excel_groups, engine="openpyxl") as writer:
+    df_view.to_excel(writer, sheet_name="Groups", index=False)
 
 excel_groups.seek(0)
 
 st.download_button(
     "⬇️ Download Excel (Groups)",
     excel_groups.getvalue(),
-    f"BOP_{st.session_state.user}_Groups.xlsx",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    key="download_groups"
+    "BOP_Groups.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-
-# =========================
-# FULL EXCEL
-# =========================
-st.divider()
-
-if st.button("📦 Generate FULL Excel (Usage List)", key="btn_excel_full"):
-
-    status = st.empty()
-    status.info("Generating Excel (large file)...")
-
-    excel_buffer = BytesIO()
-    wb = Workbook(write_only=True)
-    ws = wb.create_sheet("Usage List")
-
-    ws.append(ALL_COLUMNS)
-
-    total_rows = st.session_state.total_rows
-    count = 0
-
-    progress_excel = st.progress(0)
-
-    with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        next(reader)
-
-        for row in reader:
-            ws.append(row)
-            count += 1
-
-            if count % 10000 == 0:
-                progress_excel.progress(min(count / total_rows, 1.0))
-                status.text(f"Writing {count:,} rows")
-
-    progress_excel.progress(1.0)
-
-    wb.save(excel_buffer)
-    excel_buffer.seek(0)
-
-    st.download_button(
-        "⬇️ Download FULL Excel",
-        excel_buffer.getvalue(),
-        f"BOP_{st.session_state.user}_Usage_List.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="download_full_excel"
-    )
-
-    status.success("✅ Excel ready")
 
 gc.collect()
