@@ -15,7 +15,7 @@ MAX_ROWS_PER_SHEET = 999000
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
 st.title("📊 BOP HU-WHERE-USED")
-st.caption("⚡ Handles 1M+ rows | Streaming mode")
+st.caption("Handles 1M+ rows | Streaming mode")
 
 # =========================
 # DATA STRUCTURE
@@ -77,7 +77,6 @@ files = st.sidebar.file_uploader(
 )
 
 run = st.sidebar.button("🚀 Process", key="run_btn")
-reset = st.sidebar.button("🔄 Reset Filters", key="reset_btn")
 
 # =========================
 # SESSION STATE
