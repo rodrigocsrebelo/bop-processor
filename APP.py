@@ -20,29 +20,6 @@ st.caption(f"{APP_VERSION} | Owner: {APP_OWNER}")
 st.caption("⚡ Handles 1M+ rows | Streaming mode")
 
 # =========================
-# USER LOGIN
-# =========================
-if "user" not in st.session_state:
-    st.session_state.user = ""
-
-if not st.session_state.user:
-    with st.sidebar:
-        st.subheader("👤 User Login")
-        user_input = st.text_input("Enter your email", key="login_input")
-
-        if st.button("Login", key="login_btn"):
-            if "@" in user_input:
-                st.session_state.user = user_input
-                st.rerun()
-            else:
-                st.error("Enter a valid email")
-
-    st.stop()
-
-st.sidebar.success(f"👤 {st.session_state.user}")
-st.success(f"Welcome {st.session_state.user} 👋")
-
-# =========================
 # DATA STRUCTURE
 # =========================
 ALL_COLUMNS = [
