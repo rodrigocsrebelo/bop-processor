@@ -74,11 +74,12 @@ st.sidebar.header("⚙ Controls")
 files = st.sidebar.file_uploader(
     "Upload TXT files",
     type=["txt"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key="file_uploader_main"
 )
 
-run = st.sidebar.button("🚀 Process")
-reset = st.sidebar.button("🔄 Reset Filters")
+run = st.sidebar.button("🚀 Process", key="run_btn")
+reset = st.sidebar.button("🔄 Reset Filters", key="reset_btn")
 
 # =========================
 # SESSION STATE INIT
@@ -192,12 +193,14 @@ df_group = st.session_state.df_group
 group_filter = st.sidebar.multiselect(
     "Filter Group",
     sorted(df_group["Group"].unique()),
-    default=st.session_state.get("group_filter", [])
+    default=st.session_state.get("group_filter", []),
+    key="group_filter_widget"
 )
 
 search = st.sidebar.text_input(
     "Search",
-    value=st.session_state.get("search", "")
+    value=st.session_state.get("search", ""),
+    key="search_widget"
 )
 
 st.session_state.group_filter = group_filter
@@ -266,7 +269,7 @@ st.download_button(
 # =========================
 st.divider()
 
-if st.button("📦 Generate FULL Excel (Usage List)"):
+if st.button("📦 Generate FULL Excel (Usage List)", key="excel_btn"):
 
     status = st.empty()
     status.info("Generating large Excel file...")
