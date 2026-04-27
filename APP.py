@@ -15,7 +15,7 @@ MAX_ROWS_PER_SHEET = 999000
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
 st.title("📊 BOP HU-WHERE-USED")
-st.caption("⚡ Handles 1M+ rows | Multi-file supported | Streaming mode")
+st.caption("⚡ PDM BOP Extract | Multi-file supported | Streaming mode")
 
 # =========================
 # DATA STRUCTURE
