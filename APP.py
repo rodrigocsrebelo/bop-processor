@@ -15,7 +15,7 @@ MAX_ROWS_PER_SHEET = 999000
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
 st.title("📊 BOP HU-WHERE-USED")
-st.caption("⚡ Handles 1M+ rows | Streaming mode")
+st.caption("⚡ Handles 1M+ rows | Multi-file supported | Streaming mode")
 
 # =========================
 # DATA STRUCTURE
@@ -58,10 +58,8 @@ def parse_line(line, ncols):
     cols = line.strip().split("\t")
     if len(cols) == 1:
         cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line.strip())
-
     if len(cols) < ncols:
         cols += [""] * (ncols - len(cols))
-
     return cols[:ncols]
 
 def clean_cell(value):
@@ -77,13 +75,13 @@ def clean_cell(value):
 st.subheader("📂 Upload TXT files")
 
 files = st.file_uploader(
-    "Drag & drop files here",
+    "Drag & drop TXT files here",
     type=["txt"],
     accept_multiple_files=True
 )
 
 run = st.button("🚀 Process")
-reset = st.button("🔄 Reset Filters")
+reset = st.button("🔄 Reset")
 
 # =========================
 # SESSION STATE
@@ -97,14 +95,27 @@ if "csv_path" not in st.session_state:
 if "total_rows" not in st.session_state:
     st.session_state.total_rows = 0
 
+if "excel_ready" not in st.session_state:
+    st.session_state.excel_ready = False
+
+if "excel_data" not in st.session_state:
+    st.session_state.excel_data = None
+
 if "group_filter" not in st.session_state:
     st.session_state.group_filter = []
 
 if "search" not in st.session_state:
     st.session_state.search = ""
 
+# =========================
 # RESET
+# =========================
 if reset:
+    st.session_state.df_group = None
+    st.session_state.csv_path = None
+    st.session_state.total_rows = 0
+    st.session_state.excel_ready = False
+    st.session_state.excel_data = None
     st.session_state.group_filter = []
     st.session_state.search = ""
     st.rerun()
@@ -114,12 +125,16 @@ if not files:
     st.stop()
 
 # =========================
-# PROCESS
+# PROCESS FILES
 # =========================
 if run:
 
+    st.session_state.excel_ready = False
+    st.session_state.excel_data = None
+
     progress = st.progress(0)
     status = st.empty()
+
     status.info("📥 Processing files...")
 
     tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
@@ -180,64 +195,75 @@ if st.session_state.df_group is None:
 df_group = st.session_state.df_group
 
 # =========================
-# AUTO GENERATE EXCEL
+# GENERATE EXCEL ONCE
 # =========================
 st.divider()
 
-status = st.empty()
-progress_excel = st.progress(0)
+if not st.session_state.excel_ready:
 
-status.info("📦 Preparing Excel file...")
+    status = st.empty()
+    progress_excel = st.progress(0)
 
-excel_buffer = BytesIO()
-wb = Workbook(write_only=True)
+    status.info("📦 Preparing Excel...")
 
+    excel_buffer = BytesIO()
+    wb = Workbook(write_only=True)
 
-ws = wb.create_sheet("Usage_1")
-ws.append(ALL_COLUMNS)
+    ws = wb.create_sheet("Usage_1")
+    ws.append(ALL_COLUMNS)
 
-total_rows = st.session_state.total_rows
-count = 0
-sheet_count = 1
+    total_rows = st.session_state.total_rows
+    count = 0
+    sheet_count = 1
 
-with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
-    reader = csv.reader(f)
-    next(reader)
+    with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader)
 
-    for row in reader:
+        for row in reader:
 
-        row = (row + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
-        row = [clean_cell(x) for x in row]
+            row = (row + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
+            row = [clean_cell(x) for x in row]
 
-        if count > 0 and count % MAX_ROWS_PER_SHEET == 0:
-            sheet_count += 1
-            ws = wb.create_sheet(f"Usage_{sheet_count}")
-            ws.append(ALL_COLUMNS)
+            if count > 0 and count % MAX_ROWS_PER_SHEET == 0:
+                sheet_count += 1
+                ws = wb.create_sheet(f"Usage_{sheet_count}")
+                ws.append(ALL_COLUMNS)
 
-        ws.append(row)
-        count += 1
+            ws.append(row)
+            count += 1
 
-        if count % 20000 == 0:
-            progress_excel.progress(min(count / total_rows, 1.0))
-            status.text(f"Writing Excel: {count:,} rows")
+            if count % 20000 == 0:
+                progress_excel.progress(min(count / total_rows, 1.0))
+                status.text(f"Writing {count:,} rows")
 
-progress_excel.progress(1.0)
+    progress_excel.progress(1.0)
 
-wb.save(excel_buffer)
-excel_buffer.seek(0)
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
 
-status.success(f"✅ Excel ready ({sheet_count} sheets)")
+    st.session_state.excel_data = excel_buffer.getvalue()
+    st.session_state.excel_ready = True
 
-st.download_button(
-    "⬇️ Download FULL Excel (Usage List)",
-    excel_buffer.getvalue(),
-    "BOP_Usage_List.xlsx",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+    status.success(f"✅ Excel ready ({sheet_count} sheets)")
 
 # =========================
-# FILTERS
+# DOWNLOAD EXCEL
 # =========================
+if st.session_state.excel_ready:
+
+    st.download_button(
+        "⬇️ Download FULL Excel (Usage List)",
+        st.session_state.excel_data,
+        "BOP_Usage_List.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+# =========================
+# FILTERS + DASHBOARD
+# =========================
+st.divider()
+
 group_filter = st.multiselect(
     "Filter Group",
     sorted(df_group["Group"].unique()),
@@ -259,17 +285,11 @@ if search:
         lambda x: x.str.contains(search, case=False, na=False)
     ).any(axis=1)]
 
-# =========================
-# DASHBOARD
-# =========================
-st.divider()
-
 c1, c2, c3 = st.columns(3)
 c1.metric("Total Rows", len(df_group))
 c2.metric("Filtered", len(df_view))
 c3.metric("Groups", df_group["Group"].nunique())
 
-st.subheader("📊 Groups Data")
 st.dataframe(df_view, width="stretch", height=500)
 
 gc.collect()
