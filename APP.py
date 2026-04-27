@@ -81,7 +81,6 @@ files = st.file_uploader(
 )
 
 run = st.button("🚀 Process")
-reset = st.button("🔄 Reset")
 
 # =========================
 # SESSION STATE
@@ -106,23 +105,6 @@ if "group_filter" not in st.session_state:
 
 if "search" not in st.session_state:
     st.session_state.search = ""
-
-# =========================
-# RESET
-# =========================
-if reset:
-    st.session_state.df_group = None
-    st.session_state.csv_path = None
-    st.session_state.total_rows = 0
-    st.session_state.excel_ready = False
-    st.session_state.excel_data = None
-    st.session_state.group_filter = []
-    st.session_state.search = ""
-    st.rerun()
-
-if not files:
-    st.info("📂 Upload TXT file(s)")
-    st.stop()
 
 # =========================
 # PROCESS FILES
