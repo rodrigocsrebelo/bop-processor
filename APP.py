@@ -191,7 +191,7 @@ status.info("📦 Preparing Excel file...")
 
 excel_buffer = BytesIO()
 wb = Workbook(write_only=True)
-wb.remove(wb.active)
+
 
 ws = wb.create_sheet("Usage_1")
 ws.append(ALL_COLUMNS)
