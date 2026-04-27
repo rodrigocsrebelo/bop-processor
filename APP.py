@@ -14,8 +14,8 @@ MAX_ROWS_PER_SHEET = 999000
 
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
-st.title("📊 BOP HU-WHERE-USED")
-st.caption("⚡ PDM BOP Extract | Multi-file supported | Streaming mode")
+st.title("📊 BOP HU-WHERE-USED Conversor")
+st.caption("⚡ PDM Conversor | Auto clean state | No reset needed")
 
 # =========================
 # DATA STRUCTURE
@@ -72,51 +72,49 @@ def clean_cell(value):
 # =========================
 # UI
 # =========================
-st.subheader("📂 Upload TXT files")
-
 files = st.file_uploader(
-    "Drag & drop TXT files here",
+    "📂 Upload TXT files",
     type=["txt"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key="file_uploader"
 )
 
 run = st.button("🚀 Process")
 
 # =========================
-# SESSION STATE
+# SESSION STATE INIT
 # =========================
-if "df_group" not in st.session_state:
+for key in ["df_group", "csv_path", "total_rows", "excel_ready", "excel_data", "last_files"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
+
+# =========================
+# AUTO CLEAN WHEN FILES CHANGE OR REMOVED
+# =========================
+current_files = [f.name for f in files] if files else []
+
+if current_files != st.session_state.last_files:
     st.session_state.df_group = None
-
-if "csv_path" not in st.session_state:
     st.session_state.csv_path = None
-
-if "total_rows" not in st.session_state:
     st.session_state.total_rows = 0
-
-if "excel_ready" not in st.session_state:
     st.session_state.excel_ready = False
-
-if "excel_data" not in st.session_state:
     st.session_state.excel_data = None
-
-if "group_filter" not in st.session_state:
-    st.session_state.group_filter = []
-
-if "search" not in st.session_state:
-    st.session_state.search = ""
+    st.session_state.last_files = current_files
 
 # =========================
-# PROCESS FILES
+# NO FILES
+# =========================
+if not files:
+    st.info("📂 Upload TXT file(s)")
+    st.stop()
+
+# =========================
+# PROCESS
 # =========================
 if run:
 
-    st.session_state.excel_ready = False
-    st.session_state.excel_data = None
-
     progress = st.progress(0)
     status = st.empty()
-
     status.info("📥 Processing files...")
 
     tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
@@ -179,14 +177,11 @@ df_group = st.session_state.df_group
 # =========================
 # GENERATE EXCEL ONCE
 # =========================
-st.divider()
-
 if not st.session_state.excel_ready:
 
     status = st.empty()
     progress_excel = st.progress(0)
-
-    status.info("📦 Preparing Excel...")
+    status.info("📦 Generating Excel...")
 
     excel_buffer = BytesIO()
     wb = Workbook(write_only=True)
@@ -233,29 +228,20 @@ if not st.session_state.excel_ready:
 # DOWNLOAD EXCEL
 # =========================
 if st.session_state.excel_ready:
-
     st.download_button(
-        "⬇️ Download FULL Excel (Usage List)",
+        "⬇️ Download FULL Excel",
         st.session_state.excel_data,
         "BOP_Usage_List.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 # =========================
-# FILTERS + DASHBOARD
+# FILTERS + TABLE
 # =========================
 st.divider()
 
-group_filter = st.multiselect(
-    "Filter Group",
-    sorted(df_group["Group"].unique()),
-    default=st.session_state.group_filter
-)
-
-search = st.text_input("Search", value=st.session_state.search)
-
-st.session_state.group_filter = group_filter
-st.session_state.search = search
+group_filter = st.multiselect("Filter Group", sorted(df_group["Group"].unique()))
+search = st.text_input("Search")
 
 df_view = df_group.copy()
 
@@ -266,11 +252,6 @@ if search:
     df_view = df_view[df_view.astype(str).apply(
         lambda x: x.str.contains(search, case=False, na=False)
     ).any(axis=1)]
-
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Rows", len(df_group))
-c2.metric("Filtered", len(df_view))
-c3.metric("Groups", df_group["Group"].nunique())
 
 st.dataframe(df_view, width="stretch", height=500)
 
