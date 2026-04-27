@@ -10,12 +10,12 @@ from openpyxl import Workbook
 # =========================
 # CONFIG
 # =========================
-MAX_ROWS_PER_SHEET = 900000
+MAX_ROWS_PER_SHEET = 999000
 
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
 st.title("📊 BOP HU-WHERE-USED")
-st.caption("Owner: Rebelo Rodrigo (SO/OPM2.6.1-Lis) | PDM Team for PCN/PTN/PDN")
+st.caption("⚡ Handles 1M+ rows | Streaming mode")
 
 # =========================
 # DATA STRUCTURE
@@ -64,20 +64,26 @@ def parse_line(line, ncols):
 
     return cols[:ncols]
 
-# =========================
-# SIDEBAR
-# =========================
-st.sidebar.header("⚙ Controls")
+def clean_cell(value):
+    if value is None:
+        return ""
+    value = re.sub(r"[\x00-\x1F\x7F]", "", str(value))
+    value = value.replace("\n", " ").replace("\r", " ")
+    return value[:32767]
 
-files = st.sidebar.file_uploader(
-    "Upload TXT files",
+# =========================
+# UI
+# =========================
+st.subheader("📂 Upload TXT files")
+
+files = st.file_uploader(
+    "Drag & drop files here",
     type=["txt"],
-    accept_multiple_files=True,
-    key="upload_files",
-    width="stretch"
+    accept_multiple_files=True
 )
 
-run = st.sidebar.button("🚀 Process", key="run_btn")
+run = st.button("🚀 Process")
+reset = st.button("🔄 Reset Filters")
 
 # =========================
 # SESSION STATE
@@ -96,10 +102,13 @@ if "group_filter" not in st.session_state:
 
 if "search" not in st.session_state:
     st.session_state.search = ""
-    
-# =========================
-# NO FILE
-# =========================
+
+# RESET
+if reset:
+    st.session_state.group_filter = []
+    st.session_state.search = ""
+    st.rerun()
+
 if not files:
     st.info("📂 Upload TXT file(s)")
     st.stop()
@@ -118,7 +127,6 @@ if run:
     writer.writerow(ALL_COLUMNS)
 
     group_rows = []
-
     total = sum(len(f.getvalue().decode("utf-8", errors="ignore").splitlines()) for f in files)
     processed = 0
 
@@ -172,73 +180,71 @@ if st.session_state.df_group is None:
 df_group = st.session_state.df_group
 
 # =========================
-# FULL EXCEL (FIRST)
+# AUTO GENERATE EXCEL
 # =========================
 st.divider()
 
-if st.button("📦 Generate FULL Excel (Usage List)", key="btn_excel_full"):
+status = st.empty()
+progress_excel = st.progress(0)
 
-    status = st.empty()
-    status.info("Generating Excel (large file)...")
+status.info("📦 Preparing Excel file...")
 
-    excel_buffer = BytesIO()
-    wb = Workbook(write_only=True)
+excel_buffer = BytesIO()
+wb = Workbook(write_only=True)
+wb.remove(wb.active)
 
-    total_rows = st.session_state.total_rows
-    count = 0
-    sheet_count = 1
+ws = wb.create_sheet("Usage_1")
+ws.append(ALL_COLUMNS)
 
-    ws = wb.create_sheet(f"Usage_1")
-    ws.append(ALL_COLUMNS)
+total_rows = st.session_state.total_rows
+count = 0
+sheet_count = 1
 
-    progress_excel = st.progress(0)
+with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
+    reader = csv.reader(f)
+    next(reader)
 
-    with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter=",", quoting=csv.QUOTE_MINIMAL)
-        next(reader)
+    for row in reader:
 
-        for row in reader:
+        row = (row + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
+        row = [clean_cell(x) for x in row]
 
-            if count > 0 and count % MAX_ROWS_PER_SHEET == 0:
-                sheet_count += 1
-                ws = wb.create_sheet(f"Usage_{sheet_count}")
-                ws.append(ALL_COLUMNS)
+        if count > 0 and count % MAX_ROWS_PER_SHEET == 0:
+            sheet_count += 1
+            ws = wb.create_sheet(f"Usage_{sheet_count}")
+            ws.append(ALL_COLUMNS)
 
-            ws.append(row)
-            count += 1
+        ws.append(row)
+        count += 1
 
-            if count % 10000 == 0:
-                progress_excel.progress(min(count / total_rows, 1.0))
-                status.text(f"Writing {count:,} rows")
+        if count % 20000 == 0:
+            progress_excel.progress(min(count / total_rows, 1.0))
+            status.text(f"Writing Excel: {count:,} rows")
 
-    progress_excel.progress(1.0)
+progress_excel.progress(1.0)
 
-    wb.save(excel_buffer)
-    excel_buffer.seek(0)
+wb.save(excel_buffer)
+excel_buffer.seek(0)
 
-    st.download_button(
-        "⬇️ Download FULL Excel",
-        excel_buffer.getvalue(),
-        "BOP_Usage_List.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key="download_full_excel"
-    )
+status.success(f"✅ Excel ready ({sheet_count} sheets)")
 
-    status.success(f"✅ Excel ready ({sheet_count} sheets)")
+st.download_button(
+    "⬇️ Download FULL Excel (Usage List)",
+    excel_buffer.getvalue(),
+    "BOP_Usage_List.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
 
 # =========================
 # FILTERS
 # =========================
-group_filter = st.sidebar.multiselect(
+group_filter = st.multiselect(
     "Filter Group",
     sorted(df_group["Group"].unique()),
     default=st.session_state.group_filter
 )
 
-search = st.sidebar.text_input(
-    "Search",
-    value=st.session_state.search
-)
+search = st.text_input("Search", value=st.session_state.search)
 
 st.session_state.group_filter = group_filter
 st.session_state.search = search
@@ -265,35 +271,5 @@ c3.metric("Groups", df_group["Group"].nunique())
 
 st.subheader("📊 Groups Data")
 st.dataframe(df_view, width="stretch", height=500)
-
-# =========================
-# DOWNLOAD CSV
-# =========================
-with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
-    csv_data = f.read()
-
-st.download_button(
-    "⬇️ Download FULL CSV",
-    csv_data,
-    "BOP_Output.csv",
-    "text/csv"
-)
-
-# =========================
-# EXCEL GROUPS
-# =========================
-excel_groups = BytesIO()
-
-with pd.ExcelWriter(excel_groups, engine="openpyxl") as writer:
-    df_view.to_excel(writer, sheet_name="Groups", index=False)
-
-excel_groups.seek(0)
-
-st.download_button(
-    "⬇️ Download Excel (Groups)",
-    excel_groups.getvalue(),
-    "BOP_Groups.xlsx",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
 
 gc.collect()
