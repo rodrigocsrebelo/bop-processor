@@ -2,36 +2,37 @@ import streamlit as st
 import pandas as pd
 import re
 import csv
-from io import BytesIO
 import tempfile
 import gc
+import os
 from openpyxl import Workbook
 
 # =========================
 # CONFIG
 # =========================
 MAX_ROWS_PER_SHEET = 999000
+MAX_PREVIEW_ROWS = 5000
 
 st.set_page_config(page_title="BOP Usage List", layout="wide")
 
 st.title("📊 BOP HU-WHERE-USED Conversor")
-st.caption("⚡ PDM Conversor | Auto clean state | No reset needed")
+st.caption("⚡ PDM Conversor | Optimized memory | Excel generated on demand")
 
 # =========================
 # DATA STRUCTURE
 # =========================
 ALL_COLUMNS = [
-    "Level","Search Object (SO)","Description DC","Item Quantity DU","Direct Usage","Description DU",
-    "Status DU (MMA/DOC)","Plant status DU (MMA)","Status DU (BOM)","System Desc. DU","Plant DU (BOM)",
-    "Plant Name DU","Final Usage","Description FU","Status FU(MMA/DOC)","Plant status FU (MMA)",
-    "Status FU (BOM)","System Description FU","Plant FU (BOM)","FU Charact. 1 Value","Subitem Number",
-    "Install. Point","Sub Item Quantity","Valid from CMA DU","Valid from date DU","Valid to CMA DU",
-    "Valid to date DU","Status Text","WU Status Code"
+    "Level", "Search Object (SO)", "Description DC", "Item Quantity DU", "Direct Usage", "Description DU",
+    "Status DU (MMA/DOC)", "Plant status DU (MMA)", "Status DU (BOM)", "System Desc. DU", "Plant DU (BOM)",
+    "Plant Name DU", "Final Usage", "Description FU", "Status FU(MMA/DOC)", "Plant status FU (MMA)",
+    "Status FU (BOM)", "System Description FU", "Plant FU (BOM)", "FU Charact. 1 Value", "Subitem Number",
+    "Install. Point", "Sub Item Quantity", "Valid from CMA DU", "Valid from date DU", "Valid to CMA DU",
+    "Valid to date DU", "Status Text", "WU Status Code"
 ]
 
 GROUP_COLUMNS = [
-    "Group","Part Number","Level","Description DC","Item Quantity DU","Direct Usage",
-    "Final Usage","Description FU","Plant FU (BOM)","FU Charact. 1 Value"
+    "Group", "Part Number", "Level", "Description DC", "Item Quantity DU", "Direct Usage",
+    "Final Usage", "Description FU", "Plant FU (BOM)", "FU Charact. 1 Value"
 ]
 
 # =========================
@@ -40,34 +41,81 @@ GROUP_COLUMNS = [
 def normalize_number(v):
     return re.sub(r"\D", "", v or "")
 
+
 def identify_group(fu):
     fu = normalize_number(fu)
-    if fu.startswith(("7612","7609","764","750","751","752")):
+
+    if fu.startswith(("7612", "7609", "764", "750", "751", "752")):
         return "CP1"
     if fu.startswith("0263"):
         return "CP2"
-    if fu.startswith(("7620","7607")):
+    if fu.startswith(("7620", "7607")):
         return "CP1-PRO"
     if fu.startswith("8613600"):
         return "Bombardier"
     if fu.startswith("1270020"):
         return "E-bike"
+
     return "Other"
+
 
 def parse_line(line, ncols):
     cols = line.strip().split("\t")
+
     if len(cols) == 1:
         cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line.strip())
+
     if len(cols) < ncols:
         cols += [""] * (ncols - len(cols))
+
     return cols[:ncols]
+
 
 def clean_cell(value):
     if value is None:
         return ""
+
     value = re.sub(r"[\x00-\x1F\x7F]", "", str(value))
     value = value.replace("\n", " ").replace("\r", " ")
+
     return value[:32767]
+
+
+def safe_remove(path):
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
+def reset_app_state(remove_files=True):
+    if remove_files:
+        safe_remove(st.session_state.get("csv_path"))
+        safe_remove(st.session_state.get("excel_path"))
+
+    st.session_state.df_group = None
+    st.session_state.csv_path = None
+    st.session_state.excel_path = None
+    st.session_state.total_rows = 0
+    st.session_state.excel_ready = False
+
+
+# =========================
+# SESSION STATE INIT
+# =========================
+default_state = {
+    "df_group": None,
+    "csv_path": None,
+    "excel_path": None,
+    "total_rows": 0,
+    "excel_ready": False,
+    "last_files": None,
+}
+
+for key, value in default_state.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 # =========================
 # UI
@@ -82,23 +130,12 @@ files = st.file_uploader(
 run = st.button("🚀 Process")
 
 # =========================
-# SESSION STATE INIT
-# =========================
-for key in ["df_group", "csv_path", "total_rows", "excel_ready", "excel_data", "last_files"]:
-    if key not in st.session_state:
-        st.session_state[key] = None
-
-# =========================
 # AUTO CLEAN WHEN FILES CHANGE OR REMOVED
 # =========================
-current_files = [f.name for f in files] if files else []
+current_files = [(f.name, f.size) for f in files] if files else []
 
 if current_files != st.session_state.last_files:
-    st.session_state.df_group = None
-    st.session_state.csv_path = None
-    st.session_state.total_rows = 0
-    st.session_state.excel_ready = False
-    st.session_state.excel_data = None
+    reset_app_state(remove_files=True)
     st.session_state.last_files = current_files
 
 # =========================
@@ -109,61 +146,88 @@ if not files:
     st.stop()
 
 # =========================
-# PROCESS
+# PROCESS TXT FILES
 # =========================
 if run:
+
+    reset_app_state(remove_files=True)
 
     progress = st.progress(0)
     status = st.empty()
     status.info("📥 Processing files...")
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, mode="w", newline="", encoding="utf-8")
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        mode="w",
+        newline="",
+        encoding="utf-8",
+        suffix=".csv"
+    )
+
     writer = csv.writer(tmp)
     writer.writerow(ALL_COLUMNS)
 
     group_rows = []
-    total = sum(len(f.getvalue().decode("utf-8", errors="ignore").splitlines()) for f in files)
     processed = 0
+    total_files = len(files)
 
-    for f in files:
-        text = f.getvalue().decode("utf-8", errors="ignore")
+    try:
+        for file_idx, f in enumerate(files, start=1):
 
-        for line in text.splitlines():
+            status.text(f"Processing file {file_idx}/{total_files}: {f.name}")
+            f.seek(0)
 
-            if not line or line.startswith("Level"):
-                continue
+            for raw_line in f:
 
-            cols = parse_line(line, len(ALL_COLUMNS))
-            cols = (cols + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
+                line = raw_line.decode("utf-8", errors="ignore").rstrip("\n\r")
 
-            writer.writerow(cols)
+                if not line or line.startswith("Level"):
+                    continue
 
-            group_rows.append([
-                identify_group(cols[12]),
-                cols[12],
-                cols[0],
-                cols[2],
-                cols[3],
-                cols[4],
-                cols[12],
-                cols[13],
-                cols[18],
-                cols[19],
-            ])
+                cols = parse_line(line, len(ALL_COLUMNS))
+                cols = (cols + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
 
-            processed += 1
+                writer.writerow(cols)
 
-            if processed % 5000 == 0:
-                progress.progress(min(processed / total, 1.0))
-                status.text(f"Processing {processed:,} rows")
+                group_rows.append([
+                    identify_group(cols[12]),
+                    cols[12],
+                    cols[0],
+                    cols[2],
+                    cols[3],
+                    cols[4],
+                    cols[12],
+                    cols[13],
+                    cols[18],
+                    cols[19],
+                ])
 
-    tmp.close()
+                processed += 1
 
-    st.session_state.df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
+                if processed % 5000 == 0:
+                    status.text(f"Processing file {file_idx}/{total_files}: {f.name} | Rows: {processed:,}")
+
+            progress.progress(file_idx / total_files)
+
+    finally:
+        tmp.close()
+
+    df_group = pd.DataFrame(group_rows, columns=GROUP_COLUMNS)
+
+    # Reduce memory usage a bit
+    for col in df_group.columns:
+        df_group[col] = df_group[col].astype("string")
+
+    st.session_state.df_group = df_group
     st.session_state.csv_path = tmp.name
     st.session_state.total_rows = processed
+    st.session_state.excel_ready = False
+    st.session_state.excel_path = None
 
-    status.success("✅ Processing completed")
+    progress.progress(1.0)
+    status.success(f"✅ Processing completed | Rows processed: {processed:,}")
+
+    gc.collect()
 
 # =========================
 # LOAD DATA
@@ -175,84 +239,153 @@ if st.session_state.df_group is None:
 df_group = st.session_state.df_group
 
 # =========================
-# GENERATE EXCEL ONCE
+# GENERATE EXCEL ON DEMAND
 # =========================
-if not st.session_state.excel_ready:
+st.divider()
+
+col1, col2 = st.columns([1, 4])
+
+with col1:
+    generate_excel = st.button("📦 Generate FULL Excel")
+
+with col2:
+    if st.session_state.excel_ready:
+        st.success("✅ Excel already generated and ready to download")
+
+if generate_excel:
+
+    # If an older Excel exists, remove it first
+    safe_remove(st.session_state.excel_path)
+    st.session_state.excel_path = None
+    st.session_state.excel_ready = False
 
     status = st.empty()
     progress_excel = st.progress(0)
     status.info("📦 Generating Excel...")
 
-    excel_buffer = BytesIO()
+    xlsx_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    xlsx_path = xlsx_tmp.name
+    xlsx_tmp.close()
+
     wb = Workbook(write_only=True)
 
     ws = wb.create_sheet("Usage_1")
     ws.append(ALL_COLUMNS)
 
-    total_rows = st.session_state.total_rows
+    total_rows = st.session_state.total_rows or 1
     count = 0
     sheet_count = 1
 
-    with open(st.session_state.csv_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        next(reader)
+    try:
+        with open(st.session_state.csv_path, "r", encoding="utf-8", newline="") as f:
+            reader = csv.reader(f)
+            next(reader, None)
 
-        for row in reader:
+            for row in reader:
 
-            row = (row + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
-            row = [clean_cell(x) for x in row]
+                row = (row + [""] * len(ALL_COLUMNS))[:len(ALL_COLUMNS)]
+                row = [clean_cell(x) for x in row]
 
-            if count > 0 and count % MAX_ROWS_PER_SHEET == 0:
-                sheet_count += 1
-                ws = wb.create_sheet(f"Usage_{sheet_count}")
-                ws.append(ALL_COLUMNS)
+                if count > 0 and count % MAX_ROWS_PER_SHEET == 0:
+                    sheet_count += 1
+                    ws = wb.create_sheet(f"Usage_{sheet_count}")
+                    ws.append(ALL_COLUMNS)
 
-            ws.append(row)
-            count += 1
+                ws.append(row)
+                count += 1
 
-            if count % 20000 == 0:
-                progress_excel.progress(min(count / total_rows, 1.0))
-                status.text(f"Writing {count:,} rows")
+                if count % 20000 == 0:
+                    progress_excel.progress(min(count / total_rows, 1.0))
+                    status.text(f"Writing {count:,} / {total_rows:,} rows")
 
-    progress_excel.progress(1.0)
+        wb.save(xlsx_path)
 
-    wb.save(excel_buffer)
-    excel_buffer.seek(0)
+        st.session_state.excel_path = xlsx_path
+        st.session_state.excel_ready = True
 
-    st.session_state.excel_data = excel_buffer.getvalue()
-    st.session_state.excel_ready = True
+        progress_excel.progress(1.0)
+        status.success(f"✅ Excel ready | Sheets: {sheet_count} | Rows: {count:,}")
 
-    status.success(f"✅ Excel ready ({sheet_count} sheets)")
+    except Exception as e:
+        safe_remove(xlsx_path)
+        st.session_state.excel_path = None
+        st.session_state.excel_ready = False
+        st.error(f"❌ Error generating Excel: {e}")
+
+    finally:
+        gc.collect()
 
 # =========================
 # DOWNLOAD EXCEL
 # =========================
-if st.session_state.excel_ready:
-    st.download_button(
-        "⬇️ Download FULL Excel",
-        st.session_state.excel_data,
-        "BOP_Usage_List.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+if st.session_state.excel_ready and st.session_state.excel_path:
+
+    if os.path.exists(st.session_state.excel_path):
+
+        file_size_mb = os.path.getsize(st.session_state.excel_path) / 1024 / 1024
+        st.caption(f"Excel size: {file_size_mb:.1f} MB")
+
+        with open(st.session_state.excel_path, "rb") as f:
+            st.download_button(
+                "⬇️ Download FULL Excel",
+                data=f,
+                file_name="BOP_Usage_List.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    else:
+        st.warning("⚠️ Excel file not found. Please generate it again.")
+        st.session_state.excel_ready = False
+        st.session_state.excel_path = None
 
 # =========================
 # FILTERS + TABLE
 # =========================
 st.divider()
 
-group_filter = st.multiselect("Filter Group", sorted(df_group["Group"].unique()))
+st.subheader("🔎 Preview / Filters")
+
+group_values = sorted(df_group["Group"].dropna().unique().tolist())
+
+group_filter = st.multiselect("Filter Group", group_values)
 search = st.text_input("Search")
 
-df_view = df_group.copy()
+df_view = df_group
 
 if group_filter:
     df_view = df_view[df_view["Group"].isin(group_filter)]
 
 if search:
-    df_view = df_view[df_view.astype(str).apply(
-        lambda x: x.str.contains(search, case=False, na=False)
-    ).any(axis=1)]
+    mask = pd.Series(False, index=df_view.index)
 
-st.dataframe(df_view, width="stretch", height=500)
+    for col in df_view.columns:
+        mask = mask | df_view[col].astype("string").str.contains(
+            search,
+            case=False,
+            na=False,
+            regex=False
+        )
+
+    df_view = df_view[mask]
+
+total_filtered_rows = len(df_view)
+preview_rows = min(total_filtered_rows, MAX_PREVIEW_ROWS)
+
+st.caption(
+    f"Showing {preview_rows:,} of {total_filtered_rows:,} filtered rows "
+    f"| Total processed rows: {st.session_state.total_rows:,}"
+)
+
+st.dataframe(
+    df_view.head(MAX_PREVIEW_ROWS),
+    width="stretch",
+    height=500
+)
+
+if total_filtered_rows > MAX_PREVIEW_ROWS:
+    st.warning(
+        f"⚠️ Preview limited to {MAX_PREVIEW_ROWS:,} rows to avoid memory issues. "
+        "The Excel download still contains all rows."
+    )
 
 gc.collect()
