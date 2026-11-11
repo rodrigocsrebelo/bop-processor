@@ -146,36 +146,41 @@ if uploaded_files:
 
     st.divider()
 
-    # =========================
-    # PROCESSING
-    # =========================
 
-    if st.button("▶ Process Files", use_container_width=True):
+# =========================
+# PROCESSING
+# =========================
 
+if st.button("▶ Process Files", use_container_width=True):
+
+    try:
         rows_complete = []
         rows_group = []
 
         progress = st.progress(0)
         status_text = st.empty()
 
+        total_lines = sum(len(lines) for _, lines in file_data)
         processed_lines = 0
 
         for file_name, lines in file_data:
 
             status_text.caption(f"Processing: {file_name}")
 
-            for i, line in enumerate(lines):
+            for line_number, line in enumerate(lines, start=1):
 
+                processed_lines += 1
                 line = line.strip()
 
                 if not line or line.startswith("Level"):
-                    processed_lines += 1
                     continue
 
                 cols = parse_line(line, len(ALL_COLUMNS))
                 row = dict(zip(ALL_COLUMNS, cols))
 
-                group_name = identify_group(row["Final Usage"])
+                group_name = identify_group(
+                    row["Final Usage"]
+                )
 
                 if group_name:
                     rows_group.append({
@@ -193,8 +198,6 @@ if uploaded_files:
 
                 rows_complete.append(row)
 
-                processed_lines += 1
-
                 if processed_lines % 1000 == 0:
                     progress.progress(
                         min(processed_lines / max(total_lines, 1), 1.0)
@@ -204,7 +207,7 @@ if uploaded_files:
         status_text.empty()
 
         # =========================
-        # DATAFRAMES
+        # CREATE DATAFRAMES
         # =========================
 
         df_complete = pd.DataFrame(
@@ -219,27 +222,18 @@ if uploaded_files:
 
         st.success("Processing completed successfully!")
 
+        # =========================
+        # RESULTS
+        # =========================
+
         st.divider()
-
-        # =========================
-        # PROCESSING SUMMARY
-        # =========================
-
         st.subheader("Processing Results")
 
         col1, col2, col3 = st.columns(3)
 
-        with col1:
-            st.metric("Total Records", f"{len(df_complete):,}")
-
-        with col2:
-            st.metric("Grouped Records", f"{len(df_group):,}")
-
-        with col3:
-            st.metric(
-                "Identified Groups",
-                df_group["Group"].nunique()
-            )
+        col1.metric("Total Records", f"{len(df_complete):,}")
+        col2.metric("Grouped Records", f"{len(df_group):,}")
+        col3.metric("Identified Groups", df_group["Group"].nunique())
 
         # =========================
         # DOWNLOAD CSV
@@ -293,3 +287,9 @@ if uploaded_files:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+
+    except Exception as e:
+
+        st.error("An error occurred during processing.")
+        st.exception(e)
+
