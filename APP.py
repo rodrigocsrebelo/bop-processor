@@ -68,7 +68,7 @@ uploaded_file = st.file_uploader(
 col1, col2 = st.columns([3, 1])
 
 with col2:
-    if st.button("🗑️ Remove File", use_container_width=True):
+    if st.button("🗑️ Remove Files", use_container_width=True):
         st.session_state.uploader_key += 1
         st.rerun()
 
