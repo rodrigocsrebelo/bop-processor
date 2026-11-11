@@ -3,7 +3,7 @@ import pandas as pd
 import re
 from io import StringIO, BytesIO
 
-st.title("📊 BOP Processor")
+st.title("☁︎ BOP Processor")
 
 # =========================
 # CONFIG
@@ -60,7 +60,7 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
 uploaded_file = st.file_uploader(
-    "📂 Upload do ficheiro TXT",
+    "▣ TXT File Upload",
     type=["txt"],
     key=f"txt_uploader_{st.session_state.uploader_key}"
 )
@@ -68,19 +68,19 @@ uploaded_file = st.file_uploader(
 col1, col2 = st.columns([3, 1])
 
 with col2:
-    if st.button("🗑️ Remove Files", use_container_width=True):
+    if st.button("✕ Remove Files", use_container_width=True):
         st.session_state.uploader_key += 1
         st.rerun()
 
 if uploaded_file:
-    st.success("Arquivo carregado!")
+    st.success("Arquive loaded!")
 
     text_data = uploaded_file.getvalue().decode("utf-8", errors="ignore")
     lines = text_data.splitlines()
 
-    st.write(f"📏 Total de linhas: {len(lines):,}")
+    st.write(f"▤ Total Rows: {len(lines):,}")
 
-    if st.button("🚀 Processar"):
+    if st.button("▶ Process"):
         rows_complete = []
         rows_group = []
 
@@ -118,7 +118,7 @@ if uploaded_file:
         df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
         df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
 
-        st.success("✅ Processamento concluído!")
+        st.success("Processing completed!")
 
         # =========================
         # DOWNLOAD CSV
@@ -127,7 +127,7 @@ if uploaded_file:
         df_complete.to_csv(csv_buffer, index=False)
 
         st.download_button(
-            label="⬇️ Download CSV Completo",
+            label="↓ CSV Download completed",
             data=csv_buffer.getvalue(),
             file_name="BOP_Output.csv",
             mime="text/csv"
@@ -143,7 +143,7 @@ if uploaded_file:
             df_group.to_excel(writer, sheet_name="ByGroups", index=False)
 
         st.download_button(
-            label="⬇️ Download Excel",
+            label="↓ Export to Excel",
             data=excel_buffer.getvalue(),
             file_name="BOP_Report.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
