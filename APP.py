@@ -1,22 +1,10 @@
-
 import streamlit as st
 import pandas as pd
 import re
 from io import StringIO, BytesIO
 
-# =========================
-# PAGE CONFIGURATION
-# =========================
-st.set_page_config(
-    page_title="BOP Processor",
-    page_icon="☁",
-    layout="wide"
-)
 
-st.title("☁ BOP Processor")
-st.caption("Data Processing & Group Classification")
-
-st.divider()
+st.title("📊 BOP Processor")
 
 # =========================
 # CONFIG
@@ -24,272 +12,126 @@ st.divider()
 MAX_ROWS_PER_FILE = 999900
 
 ALL_COLUMNS = [
-    "Level","Search Object (SO)","Description DC","Item Quantity DU","Direct Usage","Description DU",
-    "Status DU (MMA/DOC)","Plant status DU (MMA)","Status DU (BOM)","System Desc. DU","Plant DU (BOM)",
-    "Plant Name DU","Final Usage","Description FU","Status FU(MMA/DOC)","Plant status FU (MMA)",
-    "Status FU (BOM)","System Description FU","Plant FU (BOM)","FU Charact. 1 Value","Subitem Number",
-    "Install. Point","Sub Item Quantity","Valid from CMA DU","Valid from date DU","Valid to CMA DU",
-    "Valid to date CMA DU","Status Text","WU Status Code"
+    "Level","Search Object (SO)","Description DC","Item Quantity DU","Direct Usage","Description DU",
+    "Status DU (MMA/DOC)","Plant status DU (MMA)","Status DU (BOM)","System Desc. DU","Plant DU (BOM)",
+    "Plant Name DU","Final Usage","Description FU","Status FU(MMA/DOC)","Plant status FU (MMA)",
+    "Status FU (BOM)","System Description FU","Plant FU (BOM)","FU Charact. 1 Value","Subitem Number",
+    "Install. Point","Sub Item Quantity","Valid from CMA DU","Valid from date DU","Valid to CMA DU",
+    "Valid to date DU","Status Text","WU Status Code"
 ]
 
 GROUP_COLUMNS = [
-    "Group","Part Number","Level","Description DC","Item Quantity DU","Direct Usage",
-    "Final Usage","Description FU","Plant FU (BOM)","FU Charact. 1 Value"
+    "Group","Part Number","Level","Description DC","Item Quantity DU","Direct Usage",
+    "Final Usage","Description FU","Plant FU (BOM)","FU Charact. 1 Value"
 ]
 
 # =========================
 # FUNCTIONS
 # =========================
 def normalize_number(value: str) -> str:
-    return re.sub(r"\D", "", value)
+    return re.sub(r"\D", "", value)
 
 def identify_group(final_usage: str) -> str:
-    fu = normalize_number(final_usage)
-
-    if fu.startswith(("7612","7609","764","750","751","752")):
-        return "Group CP1"
-
-    if fu.startswith("0263"):
-        return "Group CP2"
-
-    if fu.startswith(("7620","7607")):
-        return "Group CP1-PRO"
-
-    if fu.startswith("8613600"):
-        return "Group Bombardier"
-
-    if fu.startswith("1270020"):
-        return "Group E-bike"
-
-    return ""
+    fu = normalize_number(final_usage)
+    if fu.startswith(("7612","7609","764","750","751","752")):
+        return "Group CP1"
+    if fu.startswith("0263"):
+        return "Group CP2"
+    if fu.startswith(("7620","7607")):
+        return "Group CP1-PRO"
+    if fu.startswith("8613600"):
+        return "Group Bombardier"
+    if fu.startswith("1270020"):
+        return "Group E-bike"
+    return ""
 
 def parse_line(line, num_columns):
-    cols = line.strip().split("\t")
-
-    if len(cols) == 1:
-        cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line.strip())
-
-    if len(cols) < num_columns:
-        cols += [""] * (num_columns - len(cols))
-
-    return cols[:num_columns]
-
+    cols = line.strip().split("\t")
+    if len(cols) == 1:
+        cols = re.split(r'(?<!\S)\s{2,}(?!\S)', line.strip())
+    if len(cols) < num_columns:
+        cols += [""] * (num_columns - len(cols))
+    return cols[:num_columns]
 
 # =========================
 # UI - FILE UPLOAD
 # =========================
+uploaded_file = st.file_uploader("📂 Upload do ficheiro TXT", type=["txt"])
 
-if "uploader_key" not in st.session_state:
-    st.session_state.uploader_key = 0
+if uploaded_file:
+    st.success("Arquivo carregado!")
 
-st.subheader("File Upload")
+    text_data = uploaded_file.read().decode("utf-8", errors="ignore")
+    lines = text_data.splitlines()
 
-st.write("Upload one or multiple TXT files for combined processing.")
+    st.write(f"📏 Total de linhas: {len(lines):,}")
 
-uploaded_files = st.file_uploader(
-    "Select TXT files",
-    type=["txt"],
-    accept_multiple_files=True,
-    key=f"txt_uploader_{st.session_state.uploader_key}"
-)
+    if st.button("🚀 Processar"):
+        rows_complete = []
+        rows_group = []
 
-col1, col2 = st.columns([4, 1])
+        progress = st.progress(0)
 
-with col1:
-    if uploaded_files:
-        st.success(f"{len(uploaded_files)} file(s) successfully uploaded.")
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line or line.startswith("Level"):
+                continue
 
-with col2:
-    if st.button(
-        "✕ Remove All Files",
-        use_container_width=True,
-        disabled=not uploaded_files
-    ):
-        st.session_state.uploader_key += 1
-        st.rerun()
+            cols = parse_line(line, len(ALL_COLUMNS))
+            row = dict(zip(ALL_COLUMNS, cols))
 
-# =========================
-# FILE INFORMATION
-# =========================
+            group_name = identify_group(row["Final Usage"])
 
-if uploaded_files:
+            if group_name:
+                rows_group.append({
+                    "Group": group_name,
+                    "Part Number": row["Final Usage"],
+                    "Level": row["Level"],
+                    "Description DC": row["Description DC"],
+                    "Item Quantity DU": row["Item Quantity DU"],
+                    "Direct Usage": row["Direct Usage"],
+                    "Final Usage": row["Final Usage"],
+                    "Description FU": row["Description FU"],
+                    "Plant FU (BOM)": row["Plant FU (BOM)"],
+                    "FU Charact. 1 Value": row["FU Charact. 1 Value"]
+                })
 
-    total_lines = 0
-    file_data = []
+            rows_complete.append(row)
 
-    for uploaded_file in uploaded_files:
+            # Atualiza barra
+            if i % 1000 == 0:
+                progress.progress(i / len(lines))
 
-        text_data = uploaded_file.getvalue().decode(
-            "utf-8", errors="ignore"
-        )
+        df_complete = pd.DataFrame(rows_complete, columns=ALL_COLUMNS)
+        df_group = pd.DataFrame(rows_group, columns=GROUP_COLUMNS)
 
-        lines = text_data.splitlines()
+        st.success("✅ Processamento concluído!")
 
-        file_data.append((uploaded_file.name, lines))
-        total_lines += len(lines)
+        # =========================
+        # DOWNLOAD CSV
+        # =========================
+        csv_buffer = StringIO()
+        df_complete.to_csv(csv_buffer, index=False)
 
-    st.divider()
+        st.download_button(
+            label="⬇️ Download CSV Completo",
+            data=csv_buffer.getvalue(),
+            file_name="BOP_Output.csv",
+            mime="text/csv"
+        )
 
-    st.subheader("Upload Summary")
+        # =========================
+        # DOWNLOAD EXCEL
+        # =========================
+        excel_buffer = BytesIO()
 
-    col1, col2 = st.columns(2)
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            df_complete.to_excel(writer, sheet_name="Complete", index=False)
+            df_group.to_excel(writer, sheet_name="ByGroups", index=False)
 
-    with col1:
-        st.metric("Uploaded Files", len(uploaded_files))
-
-    with col2:
-        st.metric("Total Rows", f"{total_lines:,}")
-
-    with st.expander("View Uploaded Files"):
-        for file_name, lines in file_data:
-            st.write(f"▤ **{file_name}** — {len(lines):,} rows")
-
-    st.divider()
-
-
-# =========================
-# PROCESSING
-# =========================
-
-if st.button("▶ Process Files", use_container_width=True):
-
-    try:
-        rows_complete = []
-        rows_group = []
-
-        progress = st.progress(0)
-        status_text = st.empty()
-
-        total_lines = sum(len(lines) for _, lines in file_data)
-        processed_lines = 0
-
-        for file_name, lines in file_data:
-
-            status_text.caption(f"Processing: {file_name}")
-
-            for line_number, line in enumerate(lines, start=1):
-
-                processed_lines += 1
-                line = line.strip()
-
-                if not line or line.startswith("Level"):
-                    continue
-
-                cols = parse_line(line, len(ALL_COLUMNS))
-                row = dict(zip(ALL_COLUMNS, cols))
-
-                group_name = identify_group(
-                    row["Final Usage"]
-                )
-
-                if group_name:
-                    rows_group.append({
-                        "Group": group_name,
-                        "Part Number": row["Final Usage"],
-                        "Level": row["Level"],
-                        "Description DC": row["Description DC"],
-                        "Item Quantity DU": row["Item Quantity DU"],
-                        "Direct Usage": row["Direct Usage"],
-                        "Final Usage": row["Final Usage"],
-                        "Description FU": row["Description FU"],
-                        "Plant FU (BOM)": row["Plant FU (BOM)"],
-                        "FU Charact. 1 Value": row["FU Charact. 1 Value"]
-                    })
-
-                rows_complete.append(row)
-
-                if processed_lines % 1000 == 0:
-                    progress.progress(
-                        min(processed_lines / max(total_lines, 1), 1.0)
-                    )
-
-        progress.progress(1.0)
-        status_text.empty()
-
-        # =========================
-        # CREATE DATAFRAMES
-        # =========================
-
-        df_complete = pd.DataFrame(
-            rows_complete,
-            columns=ALL_COLUMNS
-        )
-
-        df_group = pd.DataFrame(
-            rows_group,
-            columns=GROUP_COLUMNS
-        )
-
-        st.success("Processing completed successfully!")
-
-        # =========================
-        # RESULTS
-        # =========================
-
-        st.divider()
-        st.subheader("Processing Results")
-
-        col1, col2, col3 = st.columns(3)
-
-        col1.metric("Total Records", f"{len(df_complete):,}")
-        col2.metric("Grouped Records", f"{len(df_group):,}")
-        col3.metric("Identified Groups", df_group["Group"].nunique())
-
-        # =========================
-        # DOWNLOAD CSV
-        # =========================
-
-        st.divider()
-        st.subheader("Export Results")
-
-        csv_buffer = StringIO()
-        df_complete.to_csv(csv_buffer, index=False)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.download_button(
-                label="↓ Download Complete CSV",
-                data=csv_buffer.getvalue(),
-                file_name="BOP_Output.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-
-        # =========================
-        # DOWNLOAD EXCEL
-        # =========================
-
-        excel_buffer = BytesIO()
-
-        with pd.ExcelWriter(
-            excel_buffer,
-            engine="openpyxl"
-        ) as writer:
-
-            df_complete.to_excel(
-                writer,
-                sheet_name="Complete",
-                index=False
-            )
-
-            df_group.to_excel(
-                writer,
-                sheet_name="ByGroups",
-                index=False
-            )
-
-        with col2:
-            st.download_button(
-                label="↓ Download Excel Report",
-                data=excel_buffer.getvalue(),
-                file_name="BOP_Report.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-
-    except Exception as e:
-
-        st.error("An error occurred during processing.")
-        st.exception(e)
-
+        st.download_button(
+            label="⬇️ Download Excel",
+            data=excel_buffer.getvalue(),
+            file_name="BOP_Report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
