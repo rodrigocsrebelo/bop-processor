@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 st.title("☁ BOP Processor")
-st.caption("Bill of Process | Data Processing & Group Classification")
+st.caption("Data Processing & Group Classification")
 
 st.divider()
 
