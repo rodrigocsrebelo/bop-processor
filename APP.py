@@ -14,8 +14,8 @@ st.set_page_config(page_title="BOP Processor", page_icon="☁️", layout="cente
 # =========================
 # CONFIG
 # =========================
-MAX_ROWS_PER_SHEET = 999_900  # limite do Excel: 1.048.576
-MAX_CELL_CHARS = 32_767       # limite do Excel por célula
+MAX_ROWS_PER_SHEET = 999_900  # Excel limit: 1,048,576
+MAX_CELL_CHARS = 32_767       # Excel limit per cell
 SOURCE_COL = "Source File"
 
 ALL_COLUMNS = [
@@ -70,7 +70,7 @@ def parse_line(line: str):
 
 
 class SheetWriter:
-    """Escreve linhas numa folha e cria automaticamente novas folhas quando o limite é atingido."""
+    """Writes rows to a sheet and automatically creates new sheets when the row limit is reached."""
 
     def __init__(self, workbook, base_name, headers, limit, header_fmt):
         self.wb, self.base, self.headers = workbook, base_name, headers
@@ -136,14 +136,14 @@ def process_to_excel(files, out_path, progress):
                 if n % 2000 == 0:
                     progress.progress(
                         min(done_bytes / total_bytes, 0.99),
-                        text=f"A processar **{f.name}** · {complete.total:,} linhas",
+                        text=f"Processing **{f.name}** · {complete.total:,} rows",
                     )
 
-        progress.progress(0.99, text="A finalizar o ficheiro Excel...")
+        progress.progress(0.99, text="Finalizing Excel file...")
     finally:
         wb.close()
 
-    progress.progress(1.0, text="Concluído")
+    progress.progress(1.0, text="Done")
     return complete.total, groups.total, complete.sheet_no
 
 
@@ -161,10 +161,10 @@ def cleanup_result():
 # UI
 # =========================
 st.title("☁︎ BOP Processor")
-st.caption("Carrega um ou mais ficheiros TXT e gera um relatório Excel (Complete + ByGroups).")
+st.caption("Upload one or more TXT files and generate an Excel report (Complete + ByGroups).")
 
 if xlsxwriter is None:
-    st.error("Falta o pacote `xlsxwriter`. Instala com: `pip install xlsxwriter`")
+    st.error("The `xlsxwriter` package is missing. Install it with: `pip install xlsxwriter`")
     st.stop()
 
 if "uploader_key" not in st.session_state:
@@ -172,7 +172,7 @@ if "uploader_key" not in st.session_state:
 
 with st.container(border=True):
     uploaded_files = st.file_uploader(
-        "▣ Ficheiros TXT",
+        "▣ TXT Files",
         type=["txt"],
         accept_multiple_files=True,
         key=f"txt_uploader_{st.session_state.uploader_key}",
@@ -181,17 +181,17 @@ with st.container(border=True):
     if uploaded_files:
         total_mb = sum(f.size for f in uploaded_files) / 1_048_576
         c1, c2 = st.columns(2)
-        c1.metric("Ficheiros", len(uploaded_files))
-        c2.metric("Tamanho total", f"{total_mb:,.1f} MB")
-        with st.expander("Ver ficheiros"):
+        c1.metric("Files", len(uploaded_files))
+        c2.metric("Total size", f"{total_mb:,.1f} MB")
+        with st.expander("View files"):
             for f in uploaded_files:
                 st.write(f"• {f.name} — {f.size / 1_048_576:,.1f} MB")
 
     b1, b2 = st.columns([3, 1])
     process_clicked = b1.button(
-        "▶ Processar", type="primary", use_container_width=True, disabled=not uploaded_files
+        "▶ Process", type="primary", use_container_width=True, disabled=not uploaded_files
     )
-    if b2.button("✕ Limpar", use_container_width=True):
+    if b2.button("✕ Clear", use_container_width=True):
         cleanup_result()
         st.session_state.uploader_key += 1
         st.rerun()
@@ -201,7 +201,7 @@ if process_clicked and uploaded_files:
     fd, out_path = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
 
-    progress = st.progress(0.0, text="A iniciar...")
+    progress = st.progress(0.0, text="Starting...")
     try:
         n_complete, n_groups, n_sheets = process_to_excel(uploaded_files, out_path, progress)
         st.session_state.xlsx_path = out_path
@@ -210,21 +210,21 @@ if process_clicked and uploaded_files:
         progress.empty()
         if os.path.exists(out_path):
             os.remove(out_path)
-        st.error(f"Erro durante o processamento: {type(e).__name__}: {e}")
+        st.error(f"Error during processing: {type(e).__name__}: {e}")
 
 if st.session_state.get("xlsx_path") and os.path.exists(st.session_state["xlsx_path"]):
     n_complete, n_groups, n_sheets = st.session_state["stats"]
-    st.success("Processamento concluído!")
+    st.success("Processing completed!")
 
     with st.container(border=True):
         m1, m2, m3 = st.columns(3)
-        m1.metric("Linhas processadas", f"{n_complete:,}")
-        m2.metric("Linhas em grupos", f"{n_groups:,}")
-        m3.metric("Folhas 'Complete'", n_sheets)
+        m1.metric("Rows processed", f"{n_complete:,}")
+        m2.metric("Rows in groups", f"{n_groups:,}")
+        m3.metric("'Complete' sheets", n_sheets)
 
         with open(st.session_state["xlsx_path"], "rb") as fh:
             st.download_button(
-                "↓ Descarregar Excel",
+                "↓ Download Excel",
                 data=fh,
                 file_name="BOP_Report.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
