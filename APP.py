@@ -172,7 +172,7 @@ if "uploader_key" not in st.session_state:
 
 with st.container(border=True):
     uploaded_files = st.file_uploader(
-        "▣ TXT Files",
+        "TXT Files",
         type=["txt"],
         accept_multiple_files=True,
         key=f"txt_uploader_{st.session_state.uploader_key}",
